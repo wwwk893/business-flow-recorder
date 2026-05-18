@@ -1,0 +1,4 @@
+interface:
+  display_name: "Business Flow Recorder Dev"
+  short_description: "Repo-specific recorder/replay development guide"
+  default_prompt: "Use $business-flow-recorder-dev to triage, implement, validate, and PR a Business Flow Recorder change."
