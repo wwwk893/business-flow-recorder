@@ -3808,6 +3808,61 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: 'generic modal placeholder does not override captured field label identity',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's002',
+            order: 1,
+            kind: 'recorded',
+            action: 'fill',
+            target: {
+              testId: 'wan-ip-address-pool-modal',
+              role: 'textbox',
+              name: '* 地址池名称',
+              label: '* 地址池名称',
+              placeholder: '请输入',
+              displayName: '* 地址池名称',
+              scope: {
+                dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+                form: { label: '地址池名称', name: 'name' },
+              },
+            },
+            context: {
+              eventId: 'ctx-ipv4-pool-name',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+                form: { label: '地址池名称', name: 'name', id: 'name' },
+                target: { tag: 'input', role: 'textbox', placeholder: '请输入', controlType: 'input' },
+                ui: {
+                  library: 'pro-components',
+                  component: 'modal-form',
+                  form: { formKind: 'pro-form', label: '地址池名称', name: 'name', placeholder: '请输入' },
+                  overlay: { type: 'modal', title: '新建IPv4地址池', visible: true },
+                  locatorHints: [],
+                  confidence: 0.95,
+                  reasons: ['modal form field context'],
+                },
+              },
+            },
+            value: 'test123',
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+
+      assert(code.includes('filter({ hasText: "新建IPv4地址池" }).getByLabel("地址池名称").fill("test123")'), 'exported replay should use modal-scoped field label identity');
+      assert(playback.includes('filter({ hasText: "新建IPv4地址池" }).getByLabel("地址池名称").fill("test123")'), 'parser-safe replay should use modal-scoped field label identity');
+      assert(!code.includes('getByPlaceholder("请输入").fill("test123")'), 'exported replay must not use the generic modal placeholder as field identity');
+      assert(!playback.includes('getByPlaceholder("请输入").fill("test123")'), 'parser-safe replay must not use the generic modal placeholder as field identity');
+    },
+  },
+  {
     name: 'input transaction ignores single-character press and Tab without creating business steps',
     run: () => {
       const flow = mergePageContextIntoFlow(createNamedFlow(), [
@@ -3999,6 +4054,78 @@ const tests: TestCase[] = [
       assert(!code.includes('const normalize = (value)'), 'orphaned evaluateAll callback body must not be emitted');
       assert(!code.includes('expectedText'), 'orphaned evaluateAll argument references must not be emitted');
       assert(!code.includes('}, "选择一个WAN口");'), 'orphaned evaluateAll closing line must not be emitted');
+    },
+  },
+  {
+    name: 'placeholder select trigger with test id is emitted before the real option',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            action: 'click',
+            target: {
+              testId: 'device-lan-static-route-nexthop-vrf-select',
+              name: '请选择VRF',
+              text: '请选择VRF',
+              displayName: '请选择VRF',
+            },
+            context: {
+              eventId: 'ctx-vrf-trigger',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'dropdown', visible: true },
+                target: { tag: 'div', text: '请选择VRF', normalizedText: '请选择VRF', framework: 'procomponents', controlType: 'select' },
+              },
+            },
+            uiRecipe: {
+              kind: 'select-option',
+              library: 'pro-components',
+              component: 'select',
+              formKind: 'pro-form',
+              fieldKind: 'select',
+              fieldName: 'value',
+              optionText: '请选择VRF',
+              targetText: '请选择VRF',
+            },
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            action: 'click',
+            target: { role: 'option', name: '其他VRF', text: '其他VRF', displayName: '其他VRF' },
+            context: {
+              eventId: 'ctx-vrf-option',
+              capturedAt: 1100,
+              before: {
+                dialog: { type: 'dropdown', visible: true },
+                target: { tag: 'div', role: 'option' as any, text: '其他VRF', selectedOption: '其他VRF', normalizedText: '其他VRF', framework: 'procomponents', controlType: 'select-option' },
+              },
+            },
+            uiRecipe: {
+              kind: 'select-option',
+              library: 'pro-components',
+              component: 'select',
+              fieldKind: 'select',
+              optionText: '其他VRF',
+              targetText: '其他VRF',
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+
+      for (const generated of [code, playback]) {
+        assert(generated.includes('await page.getByTestId("device-lan-static-route-nexthop-vrf-select").click();'), 'placeholder select trigger should open its owning field');
+        assert(!generated.includes('s001 skipped unsafe placeholder select option replay'), 'placeholder trigger must not be treated as an unsafe placeholder option');
+      }
+      assert(code.includes('const expectedText = "其他VRF";'), 'exported replay should still dispatch the real option after the trigger');
+      assert(playback.includes('filter({ hasText: "其他VRF" })'), 'parser-safe replay should still click the real option after the trigger');
     },
   },
   {
@@ -6594,6 +6721,81 @@ test('demo', async ({ page }) => {
 
       assertEqual(switchClicks.length, 1);
       assert(code.includes('network-resource-health-url'), 'the dependent health URL fill should remain after choice dedupe');
+    },
+  },
+  {
+    name: 'structural section test id does not override switch control identity',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            kind: 'recorded',
+            action: 'click',
+            target: {
+              testId: 'site-global-common-section',
+              role: 'switch',
+              name: '激活时强制升级 :',
+              label: '激活时强制升级',
+              displayName: '激活时强制升级',
+              scope: {
+                section: { title: '通用', kind: 'card' },
+                form: { title: '| 升级策略', label: '激活时强制升级', name: 'upgrade.at.once.form.disableRegisteredForceUpgrade' },
+              },
+            },
+            context: {
+              eventId: 'ctx-force-upgrade-switch',
+              capturedAt: 1000,
+              before: {
+                section: { title: '通用', kind: 'card' },
+                form: {
+                  title: '| 升级策略',
+                  label: '激活时强制升级',
+                  name: 'upgrade.at.once.form.disableRegisteredForceUpgrade',
+                  id: 'upgrade_at_once_form_disableRegisteredForceUpgrade',
+                },
+                target: { tag: 'button', role: 'switch', controlType: 'button' },
+                ui: {
+                  library: 'pro-components',
+                  component: 'pro-card',
+                  targetTestId: 'site-global-common-section',
+                  form: {
+                    formKind: 'pro-form',
+                    formTitle: '| 升级策略',
+                    fieldKind: 'switch',
+                    label: '激活时强制升级',
+                    name: 'at.once.form.disableRegisteredForceUpgrade',
+                  },
+                  recipe: {
+                    kind: 'raw-dom-action',
+                    library: 'pro-components',
+                    component: 'pro-card',
+                    formKind: 'pro-form',
+                    fieldKind: 'switch',
+                    fieldLabel: '激活时强制升级',
+                    fieldName: 'at.once.form.disableRegisteredForceUpgrade',
+                  },
+                  locatorHints: [],
+                  confidence: 0.95,
+                  reasons: ['pro form switch field context'],
+                },
+              },
+            },
+            rawAction: { action: { name: 'click', selector: 'internal:role=switch[name="激活时强制升级 :"i]' } },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+
+      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").locator(".ant-form-item").filter({ hasText: "激活时强制升级 :" }).getByRole("switch").click()';
+      assert(code.includes(expectedSwitchLocator), 'exported replay should use the section and field label as scope before clicking the switch');
+      assert(playback.includes(expectedSwitchLocator), 'parser-safe replay should use the section and field label as scope before clicking the switch');
+      assert(!code.includes('page.getByTestId("site-global-common-section").click()'), 'exported replay must not click the structural section root');
+      assert(!playback.includes('page.getByTestId("site-global-common-section").click()'), 'parser-safe replay must not click the structural section root');
     },
   },
   {

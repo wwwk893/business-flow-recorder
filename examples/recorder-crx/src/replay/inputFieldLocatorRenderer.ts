@@ -54,20 +54,32 @@ export function fieldLocator(step: FlowStep, hooks: InputFieldLocatorHooks, opti
   const isSelectLikeField = options.allowSelectLike !== false && !hooks.hasExplicitTextFieldContext(step) && (/^(select|tree-select|cascader)$/.test(controlType) || step.target?.role === 'combobox' || /ant-select|ant-cascader|role=combobox/.test(source));
   if ((step.target?.role === 'button' || controlType === 'button') && !isSelectLikeField)
     return undefined;
+  const genericPlaceholder = isGenericInputPlaceholder(placeholder);
   if (isTextLikeField && fieldTestId && isFieldWrapperTestId(step, fieldTestId) && preferFieldContext) {
     const root = hooks.testIdLocatorWithOrdinal(step, fieldTestId, step.target?.testId === fieldTestId ? 'target' : 'context');
-    if (placeholder)
+    if (placeholder && !genericPlaceholder)
       return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
+    if (labelForLocator && genericPlaceholder)
+      return `${root}.getByLabel(${stringLiteral(labelForLocator)})`;
     if (fieldName)
       return `${root}.locator(${stringLiteral(fieldNameInputSelector(fieldName))}).first()`;
+    if (labelForLocator)
+      return `${root}.getByLabel(${stringLiteral(labelForLocator)})`;
+    if (placeholder)
+      return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
     if (isFieldWrapperTestId(step, fieldTestId))
       return `${root}.locator(${stringLiteral('input:visible, textarea:visible, [contenteditable="true"]')}).first()`;
   }
-  if (isTextLikeField && placeholder && preferFieldContext) {
+  if (isTextLikeField && fieldName && genericPlaceholder && preferFieldContext) {
+    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    if (!labelForLocator)
+      return `${root}.locator(${stringLiteral(fieldNameInputSelector(fieldName))}).first()`;
+  }
+  if (isTextLikeField && placeholder && !genericPlaceholder && preferFieldContext) {
     const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
     return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
   }
-  if (isTextLikeField && fieldName && preferFieldContext) {
+  if (isTextLikeField && fieldName && !labelForLocator && preferFieldContext) {
     const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
     return `${root}.locator(${stringLiteral(fieldNameInputSelector(fieldName))}).first()`;
   }
@@ -76,6 +88,10 @@ export function fieldLocator(step: FlowStep, hooks: InputFieldLocatorHooks, opti
   if (labelForLocator) {
     const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
     return `${root}.getByLabel(${stringLiteral(labelForLocator)})`;
+  }
+  if (isTextLikeField && placeholder && preferFieldContext) {
+    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
   }
   return undefined;
 }
@@ -98,11 +114,13 @@ function fillFieldTestId(step: FlowStep) {
 }
 
 function fillFieldName(step: FlowStep) {
-  return step.target?.name ||
-    step.target?.scope?.form?.name ||
-    step.context?.before.ui?.form?.name ||
-    step.context?.before.ui?.form?.dataIndex ||
-    step.context?.before.form?.name;
+  return [
+    step.target?.scope?.form?.name,
+    step.context?.before.ui?.form?.name,
+    step.context?.before.ui?.form?.dataIndex,
+    step.context?.before.form?.name,
+    step.target?.name,
+  ].find(looksLikeDomFieldName);
 }
 
 function fillFieldPlaceholder(step: FlowStep) {
@@ -131,6 +149,18 @@ function shouldPreferWrapperInputLocator(step: FlowStep, field: { label?: string
 
 function fieldNameInputSelector(name: string) {
   return `input[name="${cssAttributeValue(name)}"], textarea[name="${cssAttributeValue(name)}"]`;
+}
+
+function isGenericInputPlaceholder(placeholder?: string) {
+  const normalized = (normalizeGeneratedText(placeholder || '') || '').replace(/[.。:：,，!！]+$/g, '');
+  return /^(请输入|请填写|请填入|输入|填写)$/.test(normalized);
+}
+
+function looksLikeDomFieldName(name?: string): name is string {
+  if (!name)
+    return false;
+  const normalized = name.trim();
+  return !!normalized && !/[\s\u3400-\u9fff\uff00-\uffef*：:]/.test(normalized);
 }
 
 function stepHasActualControlTestId(step: FlowStep, testId: string) {

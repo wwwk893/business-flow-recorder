@@ -126,6 +126,8 @@ function clickRecipe(step: FlowStep): UiActionRecipe {
 function selectOptionClickRecipe(step: FlowStep): UiActionRecipe | undefined {
   if (!isSelectOptionClickStep(step))
     return undefined;
+  if (isSelectPlaceholderTriggerClick(step))
+    return undefined;
   const displayText = optionDisplayTextForStep(step);
   if (!displayText)
     return undefined;
@@ -374,6 +376,17 @@ function isSelectOptionClickStep(step: FlowStep) {
   const framework = target?.framework;
   const controlType = target?.controlType;
   return (framework === 'antd' || framework === 'procomponents') && /^(select-option|tree-select-option|cascader-option)$/.test(controlType || '');
+}
+
+function isSelectPlaceholderTriggerClick(step: FlowStep) {
+  const displayText = optionDisplayTextForStep(step);
+  if (!displayText || !/^请?选择(?:一个)?\S*/.test(displayText))
+    return false;
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  const looksLikeOption = role === 'option' || /^(option|select-option|tree-select-option|cascader-option)$/.test(controlType);
+  const hasTriggerEvidence = /^(select|tree-select|cascader)$/.test(controlType) || role === 'combobox' || !!(step.target?.testId || step.context?.before.ui?.targetTestId);
+  return hasTriggerEvidence && !looksLikeOption;
 }
 
 function isToggleStep(step: FlowStep) {
