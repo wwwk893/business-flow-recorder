@@ -2597,25 +2597,30 @@ function choiceControlLocator(step: FlowStep) {
 }
 
 function choiceControlScopeRoot(step: FlowStep, role: string) {
-  const testId = role === 'switch' ? structuralChoiceControlScopeTestId(step) : undefined;
-  if (testId)
-    return `page.getByTestId(${stringLiteral(testId)})`;
+  const structuralScope = role === 'switch' ? structuralChoiceControlScopeTestId(step) : undefined;
+  if (structuralScope)
+    return testIdLocatorWithOrdinal(step, structuralScope.testId, structuralScope.source);
   const dialog = selectTriggerDialog(step);
   return dialog?.title ? `page.getByRole('dialog', { name: ${stringLiteral(dialog.title)} })` : 'page';
 }
 
 function structuralChoiceControlScopeTestId(step: FlowStep) {
-  const testId = step.target?.testId || step.context?.before.target?.testId || '';
-  if (!testId || looksLikeActionTestId(testId) || !looksLikeLabelChoiceContainerTestId(testId))
-    return undefined;
-  return testId;
+  const targetTestId = step.target?.testId;
+  const contextTestId = step.context?.before.target?.testId;
+  if (targetTestId && !looksLikeActionTestId(targetTestId) && looksLikeLabelChoiceContainerTestId(targetTestId)) {
+    const source = contextTestId === targetTestId ? 'context' : 'target';
+    return { testId: targetTestId, source } as const;
+  }
+  if (contextTestId && !looksLikeActionTestId(contextTestId) && looksLikeLabelChoiceContainerTestId(contextTestId))
+    return { testId: contextTestId, source: 'context' } as const;
+  return undefined;
 }
 
 function isStructuralChoiceControlTestId(step: FlowStep, testId: string) {
   const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
   const role = step.target?.role || step.context?.before.target?.role || '';
   return isChoiceControlKind(controlType, role) &&
-    testId === structuralChoiceControlScopeTestId(step);
+    testId === structuralChoiceControlScopeTestId(step)?.testId;
 }
 
 function isStructuralLabelChoiceClick(step: FlowStep) {

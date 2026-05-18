@@ -6799,6 +6799,99 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'duplicate structural section switch scope keeps recorded ordinal',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            kind: 'recorded',
+            action: 'click',
+            target: {
+              testId: 'site-global-common-section',
+              role: 'switch',
+              name: '激活时强制升级 :',
+              label: '激活时强制升级',
+              displayName: '激活时强制升级',
+              locatorHint: {
+                strategy: 'global-testid',
+                confidence: 0.82,
+                pageCount: 2,
+                pageIndex: 1,
+              },
+              scope: {
+                section: { title: '通用', kind: 'card' },
+                form: { title: '| 升级策略', label: '激活时强制升级', name: 'upgrade.at.once.form.disableRegisteredForceUpgrade' },
+              },
+            },
+            context: {
+              eventId: 'ctx-force-upgrade-switch-duplicate',
+              capturedAt: 1000,
+              before: {
+                section: { title: '通用', kind: 'card' },
+                form: {
+                  title: '| 升级策略',
+                  label: '激活时强制升级',
+                  name: 'upgrade.at.once.form.disableRegisteredForceUpgrade',
+                  id: 'upgrade_at_once_form_disableRegisteredForceUpgrade',
+                },
+                target: {
+                  testId: 'site-global-common-section',
+                  tag: 'button',
+                  role: 'switch',
+                  controlType: 'button',
+                  uniqueness: { pageCount: 2, pageIndex: 1 },
+                },
+                ui: {
+                  library: 'pro-components',
+                  component: 'pro-card',
+                  targetTestId: 'site-global-common-section',
+                  form: {
+                    formKind: 'pro-form',
+                    formTitle: '| 升级策略',
+                    fieldKind: 'switch',
+                    label: '激活时强制升级',
+                    name: 'at.once.form.disableRegisteredForceUpgrade',
+                  },
+                  recipe: {
+                    kind: 'raw-dom-action',
+                    library: 'pro-components',
+                    component: 'pro-card',
+                    formKind: 'pro-form',
+                    fieldKind: 'switch',
+                    fieldLabel: '激活时强制升级',
+                    fieldName: 'at.once.form.disableRegisteredForceUpgrade',
+                  },
+                  locatorHints: [],
+                  confidence: 0.95,
+                  reasons: ['pro form switch field context'],
+                },
+              },
+            },
+            rawAction: {
+              action: { name: 'click', selector: 'internal:role=switch[name="激活时强制升级 :"i]' },
+              target: {
+                testId: 'site-global-common-section',
+                uniqueness: { pageCount: 2, pageIndex: 1 },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+
+      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").nth(1).locator(".ant-form-item").filter({ hasText: "激活时强制升级 :" }).getByRole("switch").click()';
+      assert(code.includes(expectedSwitchLocator), 'exported replay should keep duplicate ordinal on the structural switch scope');
+      assert(playback.includes(expectedSwitchLocator), 'parser-safe replay should keep duplicate ordinal on the structural switch scope');
+      assert(!code.includes('page.getByTestId("site-global-common-section").locator(".ant-form-item")'), 'exported replay must not drop the recorded structural scope ordinal');
+      assert(!playback.includes('page.getByTestId("site-global-common-section").locator(".ant-form-item")'), 'parser-safe replay must not drop the recorded structural scope ordinal');
+    },
+  },
+  {
     name: 'continuation batch drops navigation signals between new user actions',
     run: () => {
       const initial = mergeActionsIntoFlow(undefined, [clickAction('打开')], [], {});
