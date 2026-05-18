@@ -1931,13 +1931,7 @@ function antdSelectOptionParserSafeSource(step: FlowStep, options: EmitStepOptio
 }
 
 function shouldParserSafeSearchAntdSelectOption(step: FlowStep, optionName: string) {
-  if (projectedSelectSearchText(step, optionName))
-    return true;
-  // AntD/ProComponents ReactNode labels (for example, an IPv4 pool label with a custom
-  // `searchText` prop) can render correctly in the open dropdown while typing the primary
-  // token filters the list to "No data". In those compound-label cases the token-filtered
-  // active dropdown click is more reliable than an extra search fill.
-  return !bestCompactIpRangeMatch(optionName);
+  return !!projectedSelectSearchText(step, optionName);
 }
 
 function parserSafeSelectSearchText(optionName: string) {
