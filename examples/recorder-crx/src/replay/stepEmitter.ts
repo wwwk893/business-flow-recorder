@@ -2256,6 +2256,8 @@ function globalTestIdLocator(step: FlowStep) {
   if (step.target?.testId) {
     if (tableHasStableRow && step.target.testId === table?.testId)
       return undefined;
+    if (isStructuralChoiceControlTestId(step, step.target.testId))
+      return undefined;
     return scopedOrGlobalTestIdLocator(step, step.target.testId, 'target');
   }
   const contextControlType = step.context?.before.target?.controlType || '';
@@ -2265,6 +2267,8 @@ function globalTestIdLocator(step: FlowStep) {
   const testId = step.context?.before.target?.testId;
   if (testId) {
     if (tableHasStableRow && testId === table?.testId)
+      return undefined;
+    if (isStructuralChoiceControlTestId(step, testId))
       return undefined;
     return scopedOrGlobalTestIdLocator(step, testId, 'context');
   }
@@ -2580,14 +2584,43 @@ function choiceControlLocator(step: FlowStep) {
   if (step.action !== 'click' && step.action !== 'check' && step.action !== 'uncheck')
     return undefined;
   const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
-  if (!isChoiceControlKind(controlType, step.target?.role || step.context?.before.target?.role || '') && !isStructuralLabelChoiceClick(step))
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  if (!isChoiceControlKind(controlType, role) && !isStructuralLabelChoiceClick(step))
     return undefined;
   const text = choiceControlText(step);
   if (!text)
     return undefined;
-  const dialog = selectTriggerDialog(step);
-  const base = dialog?.title ? `page.getByRole('dialog', { name: ${stringLiteral(dialog.title)} })` : 'page';
+  const base = choiceControlScopeRoot(step, role);
+  if (role === 'switch')
+    return `${base}.locator(${stringLiteral('.ant-form-item')}).filter({ hasText: ${stringLiteral(formItemSearchText(text))} }).getByRole(${stringLiteral('switch')})`;
   return `${base}.locator('label').filter({ hasText: ${stringLiteral(text)} })`;
+}
+
+function choiceControlScopeRoot(step: FlowStep, role: string) {
+  const structuralScope = role === 'switch' ? structuralChoiceControlScopeTestId(step) : undefined;
+  if (structuralScope)
+    return testIdLocatorWithOrdinal(step, structuralScope.testId, structuralScope.source);
+  const dialog = selectTriggerDialog(step);
+  return dialog?.title ? `page.getByRole('dialog', { name: ${stringLiteral(dialog.title)} })` : 'page';
+}
+
+function structuralChoiceControlScopeTestId(step: FlowStep) {
+  const targetTestId = step.target?.testId;
+  const contextTestId = step.context?.before.target?.testId;
+  if (targetTestId && !looksLikeActionTestId(targetTestId) && looksLikeLabelChoiceContainerTestId(targetTestId)) {
+    const source = contextTestId === targetTestId ? 'context' : 'target';
+    return { testId: targetTestId, source } as const;
+  }
+  if (contextTestId && !looksLikeActionTestId(contextTestId) && looksLikeLabelChoiceContainerTestId(contextTestId))
+    return { testId: contextTestId, source: 'context' } as const;
+  return undefined;
+}
+
+function isStructuralChoiceControlTestId(step: FlowStep, testId: string) {
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  return isChoiceControlKind(controlType, role) &&
+    testId === structuralChoiceControlScopeTestId(step)?.testId;
 }
 
 function isStructuralLabelChoiceClick(step: FlowStep) {
