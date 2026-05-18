@@ -1,142 +1,280 @@
-# Playwright CRX
+# Business Flow Recorder
 
-This package contains the [Chrome Extensions](https://developer.chrome.com/docs/extensions/) flavor of the [Playwright](http://github.com/microsoft/playwright) library.
+A Chrome extension recorder for turning real user validation sessions into
+durable business-flow assets, assertions, and replayable Playwright
+verification.
 
-For that, it relies on [`chrome.debugger`](https://developer.chrome.com/docs/extensions/reference/debugger/) to implement [playwright's `ConnectionTransport`](https://github.com/microsoft/playwright/blob/f8a30fb726bc35d4058a2d010b2ed5f6ca2409a3/packages/playwright-core/src/server/transport.ts#L54) interface.
+Built on top of `playwright-crx`, this project records realistic browser
+interactions, enriches them with page context, projects low-level actions into
+stable business steps, and generates replay code that verifies terminal
+business states.
 
-**NOTE:** If you want to write end-to-end tests, you should use [@playwright/test](https://playwright.dev/docs/intro) instead.
+Current primary target: React + Ant Design + ProComponents business systems.
 
-## Recorder / Player
+It is designed for teams that need regression coverage for fast-changing
+frontend applications without asking testers to hand-write every Playwright
+test.
 
-**Note:** This extension is available in [Chrome Web Store](https://chrome.google.com/webstore/detail/playwright-crx/jambeljnbnfbkcpnoiaedcabbgmnnlcd).
+## Why
 
-A small demo of Playwright CRX recorder and player in action:
+Modern enterprise frontends change quickly. AntD portal dropdowns, virtualized
+Select options, ProForm wrappers, ProTable row actions, modals, drawers, and
+Popconfirm flows can make traditional record-and-replay scripts fragile.
 
-![Playwright CRX Recorder / Player](./docs/assets/recorder-player.gif)
-
-It provides playwright recorder (the same used in `playwright codegen`) bundled as a chrome extension, with no other dependencies.
-This way, with your normal chrome / chromium / edge browser, you can record playwright scripts in your prefered language.
-
-In terms of chrome extension functionality, it provides:
-
-- [action button](https://developer.chrome.com/docs/extensions/reference/action/) for attaching current tab into recorder (it opens the recorder if it's closed)
-- [context menu](https://developer.chrome.com/docs/extensions/reference/contextMenus/) for the same purpose
-- [side panel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) to display the recorder by default (it can be disabled in the options, falling back to a popup window)
-- [command shortcuts](https://developer.chrome.com/docs/extensions/reference/api/commands):
-  - `Alt + Shift + R` starts recording
-  - `Alt + Shift + C` starts inspecting
-- [options page](https://developer.chrome.com/docs/extensions/develop/ui/options-page) to configure:
-  - **Default language** (defaults to **Node Library**)
-  - **TestID Attribute Name** (defaults to `data-testid`)
-  - **Open in Side Panel** (defaults to `true`, and falls back to a popup window if set to `false`) 
-- pages must be explicitly attached to be recordable, except if they are opened from already attached pages
-- closing the recorder window will detach all pages and uninstall injected scripts (highlights and event listeners)
-- a player that will run the recorded instructions, in any supported language*
-   - it actually doesn't run Java, Python or C#, but it uses an internal JSONL format to know which instructions it needs to run and how to map them into the current selected code. This way, it can highlight the lines being executed.
-
-## Business Flow Recorder Example
-
-This fork also contains an internal business-flow recorder / replay harness for
-recording durable business assets and validating generated Playwright replay.
-
-Start here:
+A raw recorder usually captures browser actions:
 
 ```text
-examples/recorder-crx/README.md
+click
+fill
+click option
+press
+```
+
+Testers and business users think in business steps:
+
+```text
+Open the create-user dialog
+Fill user information
+Select role as Auditor
+Confirm creation
+Verify the user row exists
+```
+
+Business Flow Recorder bridges that gap. It records real tester workflows,
+preserves page and business context, lets testers add intent and assertions,
+and exports compact artifacts that can be reused for replay, regression,
+documentation, AI-assisted test generation, support, and troubleshooting.
+
+## What It Does
+
+The recorder can:
+
+- attach to the current browser tab from a Chrome extension side panel;
+- record real user interactions on business pages;
+- enrich actions with page context such as modal title, form label, table row,
+  current tab, section, semantic ancestor, and AntD popup option;
+- compact low-level typing and select interactions into stable business steps;
+- let testers edit flow metadata, step intent, comments, and assertions;
+- support repeat segments for data-driven business flows;
+- export `business-flow.json` and compact YAML;
+- generate Playwright replay code;
+- run parser-safe playback inside the plugin;
+- verify generated replay with terminal-state assertions;
+- store and restore local flow drafts.
+
+## Architecture
+
+```text
+Raw recorder actions
+  -> capture normalization
+  -> Event Journal
+  -> interaction transactions
+  -> BusinessFlow projection
+  -> UiActionRecipe
+  -> exported Playwright renderer
+  -> parser-safe playback renderer
+  -> narrow runtime bridge only when declared by recipe
+```
+
+Core invariants:
+
+```text
+Raw event is fact.
+Transaction is interaction.
+FlowStep is business projection.
+UiActionRecipe is replay semantics.
+Renderer only emits code.
+Runtime bridge is narrow and fail-closed.
+```
+
+Start here for the operating map:
+
+```text
 docs/architecture/RECORDER_REPLAY_ARCHITECTURE.md
+examples/recorder-crx/README.md
 tests/crx/TEST_LAYERING.md
 docs/harness/README.md
 ```
 
-## API
+## Business Flow Artifacts
 
-It's possible to use `playwright-crx` as a library to create new chrome extensions.
+A recorded business flow contains:
 
-Here's a simple example of a background service worker for a chrome extension using **playwright-crx**:
+- flow metadata: name, repo, module, page, role, priority, business goal,
+  preconditions, test data, and tags;
+- stable business steps;
+- target context: test id, role, label, table row, dialog, section, form item,
+  option text, and semantic ancestor;
+- tester-authored intent and comments;
+- assertions;
+- repeat segments;
+- replay artifacts;
+- redacted diagnostics.
 
-```ts
-import { crx, expect } from 'playwright-crx/test';
+The exported artifacts are intended to be compact, reviewable, deterministic,
+and safe to share internally.
 
-// if you don't need assertions, you can reduce the bundle size by importing crx from playwright-crx
-// import { crx } from 'playwright-crx';
+## AntD / ProComponents Support
 
-chrome.action.onClicked.addListener(async ({ id: tabId }) => {
-  const crxApp = await crx.start({ slowMo: 500 });
+The recorder is optimized for real AntD and ProComponents pages, including:
 
-  try {
-    // tries to connect to the active tab, or creates a new one
-    const page = await crxApp.attach(tabId!).catch(() => crxApp.newPage());
+- AntD Select / TreeSelect / Cascader portal dropdowns;
+- virtualized option DOM;
+- ProForm fields and wrappers;
+- Modal / Drawer / Popconfirm;
+- ProTable row actions;
+- repeated `data-testid` targets;
+- readonly Select inputs;
+- hidden overlay containers;
+- generated replay terminal verification.
 
-    await page.goto('https://demo.playwright.dev/todomvc/#/');
-    await page.getByPlaceholder('What needs to be done?').click();
-    await page.getByPlaceholder('What needs to be done?').fill('Hello World!');
-    await page.getByPlaceholder('What needs to be done?').press('Enter');
+The goal is not to blindly click whatever matches. The replay system prefers
+stable evidence and fails closed when an action would be ambiguous.
 
-    // assertions work too
-    await expect(page.getByTestId('todo-title')).toHaveText('Hello World!');
-  } finally {
-    // page stays open, but no longer controlled by playwright
-    await crxApp.detach(page);
-    // releases chrome.debugger
-    await crxApp.close();
-  }
-});
+## Replay Safety
+
+Generated replay must prove business success, not just script completion.
+
+Examples of terminal-state verification:
+
+- created row exists;
+- deleted row no longer exists;
+- modal is closed;
+- selected value is visible;
+- required fields were filled before save;
+- repeat rows produce the expected table state.
+
+Runtime fallback is intentionally narrow. `CrxPlayer` is only allowed to bridge
+explicitly generated parser-safe actions, such as active AntD popup option
+dispatch or duplicate ordinal clicks. It must not perform global text fallback,
+open all selects, or infer business semantics.
+
+## Test Layers
+
+```bash
+npm run test:crx:business-flow:l1
+npm run test:crx:business-flow:l2 -- --reporter=line --global-timeout=1200000
+npm run test:crx:business-flow:l3 -- --reporter=line --global-timeout=1200000
 ```
 
-A more complete example can be found in `examples/todomvc-crx`.
+Layer guide:
 
-### Tracing
-
-Playwright CRX also supports [tracing](https://playwright.dev/docs/api/class-tracing), compatible with [Playwright Trace Viewer](https://trace.playwright.dev).
-
-Here's an example on how to run it:
-
-```ts
-await page.context().tracing.start({ screenshots: true, snapshots: true });
-
-await page.goto('https://demo.playwright.dev/todomvc');
-const newTodo = page.getByPlaceholder('What needs to be done?');
-await newTodo.fill('buy some cheese');
-await newTodo.press('Enter');
-await expect(page.getByTestId('todo-title')).toHaveText('buy some cheese');
-
-// stores in memfs and then reads its data
-await page.context().tracing.stop({ path: '/tmp/trace.zip' });
-const data = crx.fs.readFileSync('/tmp/trace.zip');
-
-// opens playwright traceviewer
-const tracePage = await crxApp.newPage();
-await tracePage.goto('https://trace.playwright.dev');
-const [filechooser] = await Promise.all([
-  tracePage.waitForEvent('filechooser'),
-  tracePage.getByRole('button', { name: 'Select file(s)' }).click(),
-]);
-
-// uploads the trace data buffer (file paths from memfs are not supported)
-await filechooser.setFiles({
-  name: 'trace.zip',
-  mimeType: 'application/zip',
-  buffer: Buffer.from(data),
-});
+```text
+L1: pure flow / transaction / projection / recipe / codegen contracts
+L2: deterministic CRX generated replay with terminal-state assertions
+L3: human-like mouse/keyboard smoke paths
 ```
 
-You can give it a try with `playwright-crx/examples/todomvc-crx`.
+The aggregate command remains available:
+
+```bash
+npm run test:crx:business-flow -- --reporter=line --global-timeout=1200000
+```
+
+For replay failures, inspect generated artifacts first:
+
+```text
+tests/.raw-generated-replay/
+tests/test-results/
+tests/playwright-report/
+```
 
 ## Build
 
-To build `playwright-crx`:
-
 ```bash
 npm ci
+npm run build:crx
+npm run build:examples:recorder
+npm run build:tests
+```
+
+Use this order when recorder, parser, player, runtime bridge, or replay code
+changes. The example extension and CRX tests can depend on both root `lib/`
+output and `examples/recorder-crx/dist`.
+
+The historical full build remains:
+
+```bash
 npm run build
 ```
 
-## Updating Playwright
+## Privacy and Redaction
 
-Playwright is nested as a git subtree.
+Do not collect or export:
 
-To update it, just run the following command (replace `v1.48.0` with the desired release tag):
+- cookies;
+- authorization headers;
+- tokens;
+- passwords;
+- full DOM snapshots;
+- full response bodies;
+- private customer data.
+
+Business-flow JSON, compact YAML, and replay diagnostics must stay compact and
+redacted.
+
+## Project Boundaries
+
+This project currently focuses on browser-extension business-flow recording,
+review, export, and replay verification.
+
+Out of scope for the current recorder MVP:
+
+- Native Messaging runner integration;
+- full local Node runner platform;
+- CI platform orchestration;
+- AI-generated Playwright specs;
+- AI repair loops;
+- automatic Git or PR creation.
+
+Those can be future layers, but the recorder must first produce stable,
+trustworthy business-flow assets.
+
+## Relationship to Playwright CRX
+
+This repository is based on `playwright-crx`, which provides a Chrome extension
+implementation of Playwright recorder/player functionality through
+`chrome.debugger`.
+
+The business-flow recorder extends that foundation with:
+
+- side-panel business workflow review;
+- Event Journal;
+- interaction transactions;
+- BusinessFlow projection;
+- UiActionRecipe;
+- replay compiler;
+- AntD / ProComponents semantic handling;
+- terminal-state verification;
+- L1/L2/L3 regression harness.
+
+The upstream-style `playwright-crx` library API, TodoMVC example, Chrome
+extension recorder/player foundation, and Playwright subtree remain in this
+repository. Keep upstream compatibility changes separate from business-flow
+recorder changes.
+
+This project is not affiliated with Microsoft Playwright.
+
+## Playwright CRX Foundation
+
+The foundation layer relies on
+[`chrome.debugger`](https://developer.chrome.com/docs/extensions/reference/debugger/)
+to implement Playwright's `ConnectionTransport` interface inside a Chrome
+extension.
+
+If you only need ordinary end-to-end tests, use
+[`@playwright/test`](https://playwright.dev/docs/intro). Use this repository
+when you need extension-based recording, parser-safe playback, or durable
+business-flow assets.
+
+The upstream-style examples are still useful when working on the CRX foundation:
+
+```text
+examples/todomvc-crx
+```
+
+To update the nested Playwright subtree:
 
 ```bash
-git subtree pull --prefix=playwright git@github.com:microsoft/playwright.git v1.48.0 --squash
+git subtree pull --prefix=playwright git@github.com:microsoft/playwright.git <release-tag> --squash
 ```
