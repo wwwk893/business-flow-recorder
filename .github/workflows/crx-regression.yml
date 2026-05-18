@@ -17,10 +17,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  business-flow-e2e:
-    name: Business Flow E2E + human-like
+  business-flow-layer:
+    name: Business Flow ${{ matrix.layer }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - layer: L1
+            browser: false
+            build: false
+            command: npm run test:crx:business-flow:l1
+            artifact-name: business-flow-l1-artifacts
+          - layer: L2
+            browser: true
+            build: true
+            command: npm run test:crx:business-flow:l2 -- --reporter=line --global-timeout=1200000
+            artifact-name: business-flow-l2-artifacts
+          - layer: L3
+            browser: true
+            build: true
+            command: npm run test:crx:business-flow:l3 -- --reporter=line --global-timeout=1200000
+            artifact-name: business-flow-l3-artifacts
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,9 +54,11 @@ jobs:
         run: npm ci
 
       - name: Install Chromium dependencies
+        if: ${{ matrix.browser }}
         run: npm run test:install
 
       - name: Build CRX package, recorder example, and tests
+        if: ${{ matrix.build }}
         run: |
           npm run ci:pw:bundles
           npm run build:crx
@@ -46,20 +67,14 @@ jobs:
         env:
           NODE_OPTIONS: "--max_old_space_size=4096"
 
-      - name: L1 flow/unit/codegen/recipe contract tests
-        run: npm run test:crx:business-flow:l1
-
-      - name: L2 deterministic CRX generated replay tests
-        run: npm run test:crx:business-flow:l2 -- --reporter=line --global-timeout=1200000
-
-      - name: L3 human-like CRX smoke tests
-        run: npm run test:crx:business-flow:l3 -- --reporter=line --global-timeout=1200000
+      - name: Run ${{ matrix.layer }} business-flow tests
+        run: ${{ matrix.command }}
 
       - name: Upload Playwright artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: business-flow-e2e-artifacts
+          name: ${{ matrix.artifact-name }}
           path: |
             tests/playwright-report
             tests/test-results
@@ -67,3 +82,17 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
+
+  business-flow-e2e:
+    name: Business Flow E2E + human-like
+    runs-on: ubuntu-latest
+    needs: business-flow-layer
+    if: ${{ always() }}
+    steps:
+      - name: Check L1/L2/L3 results
+        run: |
+          if [ "${{ needs.business-flow-layer.result }}" != "success" ]; then
+            echo "One or more business-flow layers failed: ${{ needs.business-flow-layer.result }}"
+            exit 1
+          fi
+          echo "All business-flow layers passed."
