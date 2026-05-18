@@ -2592,7 +2592,7 @@ function choiceControlLocator(step: FlowStep) {
     return undefined;
   const base = choiceControlScopeRoot(step, role);
   if (role === 'switch')
-    return `${base}.locator(${stringLiteral('.ant-form-item')}).filter({ hasText: ${stringLiteral(formItemSearchText(text))} }).getByRole(${stringLiteral('switch')})`;
+    return `${base}.getByRole(${stringLiteral('switch')}, ${roleNameOptionsSource(step, 'switch', text)})`;
   return `${base}.locator('label').filter({ hasText: ${stringLiteral(text)} })`;
 }
 
@@ -2620,7 +2620,14 @@ function isStructuralChoiceControlTestId(step: FlowStep, testId: string) {
   const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
   const role = step.target?.role || step.context?.before.target?.role || '';
   return isChoiceControlKind(controlType, role) &&
-    testId === structuralChoiceControlScopeTestId(step)?.testId;
+    testId === structuralChoiceControlTestId(step);
+}
+
+function structuralChoiceControlTestId(step: FlowStep) {
+  const targetTestId = step.target?.testId || step.context?.before.target?.testId || '';
+  if (!targetTestId || looksLikeActionTestId(targetTestId) || !looksLikeLabelChoiceContainerTestId(targetTestId))
+    return undefined;
+  return targetTestId;
 }
 
 function isStructuralLabelChoiceClick(step: FlowStep) {
