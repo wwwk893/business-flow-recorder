@@ -1511,6 +1511,103 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: 'parser-safe AntD select option without search evidence skips readonly input fill',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          action: 'select',
+          value: 'WAN1',
+          target: {
+            role: 'combobox',
+            label: 'WAN口',
+            name: 'WAN1',
+            displayName: 'WAN1',
+            scope: {
+              form: { label: 'WAN口', name: 'name' },
+              dialog: { type: 'dropdown', visible: true },
+            },
+            text: 'WAN1',
+            raw: {
+              ui: {
+                library: 'pro-components',
+                component: 'select',
+                targetText: 'WAN1',
+                form: { formKind: 'antd-form', fieldKind: 'select', label: 'WAN口', name: 'name' },
+                overlay: { type: 'select-dropdown', visible: true },
+                option: { text: 'WAN1', path: ['WAN1'] },
+                recipe: {
+                  kind: 'select-option',
+                  library: 'pro-components',
+                  component: 'select',
+                  formKind: 'antd-form',
+                  fieldKind: 'select',
+                  fieldLabel: 'WAN口',
+                  fieldName: 'name',
+                  optionText: 'WAN1',
+                  targetText: 'WAN1',
+                },
+                confidence: 0.868,
+                weak: false,
+              },
+            },
+          },
+          context: {
+            eventId: 'ctx-readonly-select-option',
+            capturedAt: 1000,
+            before: {
+              form: { label: 'WAN口', name: 'name' },
+              dialog: { type: 'dropdown', visible: true },
+              target: {
+                tag: 'div',
+                role: 'option',
+                title: 'WAN1',
+                text: 'WAN1',
+                selectedOption: 'WAN1',
+                normalizedText: 'WAN1',
+                framework: 'procomponents',
+                controlType: 'select-option',
+              },
+              ui: {
+                library: 'pro-components',
+                component: 'select',
+                targetText: 'WAN1',
+                form: { formKind: 'antd-form', fieldKind: 'select', label: 'WAN口', name: 'name' },
+                overlay: { type: 'select-dropdown', visible: true },
+                option: { text: 'WAN1', path: ['WAN1'] },
+                recipe: {
+                  kind: 'select-option',
+                  library: 'pro-components',
+                  component: 'select',
+                  formKind: 'antd-form',
+                  fieldKind: 'select',
+                  fieldLabel: 'WAN口',
+                  fieldName: 'name',
+                  optionText: 'WAN1',
+                  targetText: 'WAN1',
+                },
+                confidence: 0.868,
+                weak: false,
+              },
+            } as any,
+          },
+          assertions: [],
+        }],
+      };
+      const exported = generateBusinessFlowPlaywrightCode(flow);
+      const parserSafe = generateBusinessFlowPlaybackCode(flow);
+      const parserSafeStep = stepCodeBlock(parserSafe, 's001');
+
+      assert(exported.includes('selectOwnedOption(true)'), 'exported renderer should keep trigger-owned AntD dispatch for readonly selects');
+      assert(parserSafeStep.includes('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option'), 'parser-safe renderer should still click the active dropdown option');
+      assert(!parserSafeStep.includes('.fill("WAN1")'), 'parser-safe renderer must not fill a readonly AntD select search input without explicit search evidence');
+      assertEqual(countBusinessFlowPlaybackActions(flow), runnableLineCount(parserSafe));
+    },
+  },
+  {
     name: 'locator contract does not execute structural dialog test ids as button clicks',
     run: () => {
       const flow: BusinessFlow = {
