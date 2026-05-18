@@ -3797,6 +3797,92 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: 'ProComponents range fill treats ui target test id as wrapper evidence',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's016',
+            order: 1,
+            kind: 'recorded',
+            action: 'fill',
+            target: {
+              testId: 'wan-ip-address-pool-range-field',
+              role: 'textbox',
+              name: 'start',
+              label: '开始地址，例如：192.168.1.1',
+              placeholder: '开始地址，例如：192.168.1.1',
+              locator: 'internal:role=textbox[name="开始地址，例如："i]',
+              displayName: '开始地址，例如：192.168.1.1',
+              scope: {
+                dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+                form: { label: '开始地址，例如：192.168.1.1', name: 'start' },
+              },
+            },
+            context: {
+              eventId: 'ctx-ipv4-range-start',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+                form: {
+                  label: '开始地址，例如：192.168.1.1',
+                  name: 'pool.start',
+                  namePath: ['pool', 'start'],
+                  nameSource: 'id',
+                  id: 'pool_start',
+                },
+                target: {
+                  tag: 'input',
+                  role: 'textbox',
+                  placeholder: '开始地址，例如：192.168.1.1',
+                  framework: 'procomponents',
+                  controlType: 'input',
+                  locatorQuality: 'semantic',
+                },
+                ui: {
+                  library: 'pro-components',
+                  component: 'pro-form-field',
+                  targetTestId: 'wan-ip-address-pool-range-field',
+                  form: {
+                    formKind: 'pro-form',
+                    formTitle: '其它',
+                    fieldKind: 'input',
+                    label: '开始地址，例如：192.168.1.1',
+                    name: 'start',
+                    placeholder: '开始地址，例如：192.168.1.1',
+                  },
+                  recipe: {
+                    kind: 'fill-form-field',
+                    library: 'pro-components',
+                    component: 'pro-form-field',
+                    formKind: 'pro-form',
+                    fieldKind: 'input',
+                    fieldLabel: '开始地址，例如：192.168.1.1',
+                    fieldName: 'start',
+                  },
+                  locatorHints: [],
+                  confidence: 0.95,
+                  reasons: ['pro form range wrapper context'],
+                },
+              },
+            },
+            value: '1.1.1.1',
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+      const expected = 'page.getByTestId("wan-ip-address-pool-range-field").getByPlaceholder("开始地址，例如：192.168.1.1").fill("1.1.1.1")';
+
+      assert(code.includes(expected), 'exported replay should enter the range wrapper by field placeholder');
+      assert(playback.includes(expected), 'parser-safe replay should enter the range wrapper by field placeholder');
+      assert(!code.includes('page.getByTestId("wan-ip-address-pool-range-field").fill("1.1.1.1")'), 'exported replay must not fill the range wrapper directly');
+      assert(!playback.includes('page.getByTestId("wan-ip-address-pool-range-field").fill("1.1.1.1")'), 'parser-safe replay must not fill the range wrapper directly');
+    },
+  },
+  {
     name: 'ordinary label-only input fill keeps label fallback without stronger field context',
     run: () => {
       const flow = mergeActionsIntoFlow(undefined, [
@@ -6791,11 +6877,13 @@ test('demo', async ({ page }) => {
       const code = generateBusinessFlowPlaywrightCode(flow);
       const playback = generateBusinessFlowPlaybackCode(flow);
 
-      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").locator(".ant-form-item").filter({ hasText: "激活时强制升级 :" }).getByRole("switch").click()';
-      assert(code.includes(expectedSwitchLocator), 'exported replay should use the section and field label as scope before clicking the switch');
-      assert(playback.includes(expectedSwitchLocator), 'parser-safe replay should use the section and field label as scope before clicking the switch');
+      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").getByRole("switch", { name: "激活时强制升级 :" }).click()';
+      assert(code.includes(expectedSwitchLocator), 'exported replay should use the structural section as a scope without relying on AntD form-item DOM');
+      assert(playback.includes(expectedSwitchLocator), 'parser-safe replay should use the structural section as a scope without relying on AntD form-item DOM');
       assert(!code.includes('page.getByTestId("site-global-common-section").click()'), 'exported replay must not click the structural section root');
       assert(!playback.includes('page.getByTestId("site-global-common-section").click()'), 'parser-safe replay must not click the structural section root');
+      assert(!code.includes('page.getByTestId("site-global-common-section").locator(".ant-form-item")'), 'exported replay must not scope through an unverified structural section root');
+      assert(!playback.includes('page.getByTestId("site-global-common-section").locator(".ant-form-item")'), 'parser-safe replay must not scope through an unverified structural section root');
     },
   },
   {
@@ -6884,7 +6972,7 @@ test('demo', async ({ page }) => {
       const code = generateBusinessFlowPlaywrightCode(flow);
       const playback = generateBusinessFlowPlaybackCode(flow);
 
-      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").nth(1).locator(".ant-form-item").filter({ hasText: "激活时强制升级 :" }).getByRole("switch").click()';
+      const expectedSwitchLocator = 'page.getByTestId("site-global-common-section").nth(1).getByRole("switch", { name: "激活时强制升级 :" }).click()';
       assert(code.includes(expectedSwitchLocator), 'exported replay should keep duplicate ordinal on the structural switch scope');
       assert(playback.includes(expectedSwitchLocator), 'parser-safe replay should keep duplicate ordinal on the structural switch scope');
       assert(!code.includes('page.getByTestId("site-global-common-section").locator(".ant-form-item")'), 'exported replay must not drop the recorded structural scope ordinal');

@@ -182,7 +182,9 @@ function hasObservedFieldWrapperTestId(step: FlowStep, testId: string) {
   const rawPageContext = rawPageContextFromTarget(step.target?.raw);
   return step.context?.before.form?.testId === testId ||
     step.context?.before.ui?.form?.testId === testId ||
-    rawPageContextFormTestId(rawPageContext) === testId;
+    rawPageContextFormTestId(rawPageContext) === testId ||
+    isUiTargetFieldWrapper(step.context?.before.ui, testId) ||
+    isUiTargetFieldWrapper(rawPageContext?.ui, testId);
 }
 
 function rawPageContextFromTarget(raw: unknown, depth = 0): any {
@@ -201,6 +203,17 @@ function rawPageContextTarget(raw: unknown): any {
 
 function rawPageContextFormTestId(pageContext: any) {
   return pageContext?.form?.testId || pageContext?.ui?.form?.testId;
+}
+
+function isUiTargetFieldWrapper(ui: any, testId: string) {
+  if (!ui || ui.targetTestId !== testId || ui.library !== 'pro-components')
+    return false;
+  const fieldKind = String(ui.form?.fieldKind || ui.recipe?.fieldKind || '');
+  const component = String(ui.component || '');
+  const hasFieldIdentity = !!(ui.form?.label || ui.form?.name || ui.form?.placeholder || ui.recipe?.fieldLabel || ui.recipe?.fieldName);
+  return hasFieldIdentity &&
+    /^(input|textarea|number|text|password)$/.test(fieldKind) &&
+    /^(pro-form-field|input|textarea|modal-form)$/.test(component);
 }
 
 function isActualTextControl(target: { role?: unknown; controlType?: unknown; tag?: unknown }, fallbackRole?: string) {
