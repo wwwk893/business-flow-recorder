@@ -420,7 +420,7 @@ function withInheritedAntdSelectOptionContext(flow: BusinessFlow, hooks: Effecti
   let activeSelectQuery = '';
   let changed = false;
   const steps = flow.steps.map((step, index) => {
-    if (hooks.isAntdSelectFieldStep(step, flow.steps[index + 1])) {
+    if (hooks.isAntdSelectFieldStep(step, flow.steps[index + 1]) || isTestIdSelectTriggerBeforeOption(step, flow.steps[index + 1], hooks)) {
       const query = hooks.selectQueryForStep(step);
       if (query)
         activeSelectQuery = query;
@@ -440,6 +440,13 @@ function withInheritedAntdSelectOptionContext(flow: BusinessFlow, hooks: Effecti
     return step;
   });
   return changed ? { ...flow, steps } : flow;
+}
+
+function isTestIdSelectTriggerBeforeOption(step: FlowStep, nextStep: FlowStep | undefined, hooks: EffectiveReplayFlowHooks) {
+  if (step.action !== 'click' || !nextStep)
+    return false;
+  const testId = step.target?.testId || step.context?.before.target?.testId || '';
+  return /(^|[-_])(select|selector)([-_]|$)/i.test(testId) && hooks.looksLikeDropdownOptionStepForDedup(nextStep);
 }
 
 export function sameDialogScope(left?: FlowDialogScope, right?: FlowDialogScope) {

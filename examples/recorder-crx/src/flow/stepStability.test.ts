@@ -8186,6 +8186,76 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'playback omits redundant input test id focus click before matching fill',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          sourceActionIds: ['a001'],
+          action: 'click',
+          target: {
+            testId: 'wan-transport-egress-disable-threshold-input',
+            displayName: 'wan-transport-egress-disable-threshold-input',
+          },
+          context: {
+            eventId: 'ctx-threshold-click',
+            capturedAt: 1000,
+            before: {
+              dialog: { title: '增加传输网络', type: 'modal', visible: true },
+              target: {
+                tag: 'input',
+                role: 'spinbutton',
+                testId: 'wan-transport-egress-disable-threshold-input',
+                controlType: 'input',
+              },
+            },
+          },
+          rawAction: { action: { name: 'click', selector: 'internal:testid=[data-testid="wan-transport-egress-disable-threshold-input"s]' } },
+          assertions: [],
+        }, {
+          id: 's002',
+          order: 2,
+          kind: 'recorded',
+          sourceActionIds: ['a002'],
+          action: 'fill',
+          target: {
+            testId: 'wan-transport-egress-disable-threshold-input',
+            displayName: 'wan-transport-egress-disable-threshold-input',
+          },
+          value: '3',
+          context: {
+            eventId: 'ctx-threshold-fill',
+            capturedAt: 1100,
+            before: {
+              dialog: { title: '增加传输网络', type: 'modal', visible: true },
+              target: {
+                tag: 'input',
+                role: 'spinbutton',
+                testId: 'wan-transport-egress-disable-threshold-input',
+                controlType: 'input',
+              },
+            },
+          },
+          rawAction: { action: { name: 'fill', selector: 'internal:testid=[data-testid="wan-transport-egress-disable-threshold-input"s]', text: '3' } },
+          assertions: [],
+        }],
+      };
+
+      const exportedCode = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+
+      for (const code of [exportedCode, playbackCode]) {
+        assert(!code.includes('// s001 '), 'redundant direct input test id focus click should be omitted');
+        assert(!code.includes('wan-transport-egress-disable-threshold-input").click()'), 'direct input test id focus click should not be replayed before fill');
+        assert(code.includes('page.getByTestId("wan-transport-egress-disable-threshold-input").fill("3");'), 'matching direct test id fill should still be emitted');
+      }
+      assertEqual(countBusinessFlowPlaybackActions(flow), 1);
+    },
+  },
+  {
     name: 'code preview regenerates AntD select option clicks from page context instead of brittle title locators',
     run: () => {
       const flow: BusinessFlow = {
@@ -10854,6 +10924,70 @@ test('demo', async ({ page }) => {
 
       assert(optionStep.includes('selectOwnedOption(false)'), 'context-light option should use trigger-owned option replay');
       assert(!optionStep.includes('getByText(\'生产VRF\')') && !optionStep.includes('getByText("生产VRF")'), 'context-light option should not replay as a page-global text click');
+    },
+  },
+  {
+    name: 'contextless has-text option after test id select trigger replays through active dropdown inside repeat',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's003',
+          order: 3,
+          kind: 'recorded',
+          sourceActionIds: ['a003'],
+          action: 'click',
+          target: {
+            selector: 'internal:testid=[data-testid="predefined-services-select"s] >> div >> nth=1',
+            testId: 'predefined-services-select',
+            locator: 'internal:testid=[data-testid="predefined-services-select"s] >> div >> nth=1',
+            locatorHint: { strategy: 'global-testid', confidence: 0.9, pageCount: 2, pageIndex: 1 },
+          },
+          assertions: [],
+        }, {
+          id: 's004',
+          order: 4,
+          kind: 'recorded',
+          sourceActionIds: ['a004'],
+          action: 'click',
+          target: {
+            selector: 'div >> internal:has-text=/^HTTP: 80$/ >> nth=1',
+            locator: 'div >> internal:has-text=/^HTTP: 80$/ >> nth=1',
+          },
+          assertions: [],
+        }, {
+          id: 's005',
+          order: 5,
+          kind: 'recorded',
+          sourceActionIds: ['a005'],
+          action: 'click',
+          target: {
+            selector: 'div >> internal:has-text=/^HTTPS: 443$/ >> nth=1',
+            locator: 'div >> internal:has-text=/^HTTPS: 443$/ >> nth=1',
+          },
+          assertions: [],
+        }],
+        repeatSegments: [{
+          id: 'repeat-firewall-services',
+          name: '批量执行 firewall',
+          stepIds: ['s003', 's004', 's005'],
+          parameters: [],
+          rows: [{ id: 'row-1', values: {} }],
+          createdAt: '2026-05-18T00:00:00.000Z',
+          updatedAt: '2026-05-18T00:00:00.000Z',
+        }],
+      };
+      const exported = generateBusinessFlowPlaywrightCode(flow);
+      const parserSafe = generateBusinessFlowPlaybackCode(flow);
+
+      for (const code of [exported, parserSafe]) {
+        assert(code.includes('page.getByTestId("predefined-services-select").click();'), 'repeat replay should keep the captured select trigger');
+        assert(code.includes('HTTP: 80'), 'repeat replay should keep the HTTP option text');
+        assert(code.includes('HTTPS: 443'), 'repeat replay should keep the HTTPS option text');
+        assert(code.includes('.ant-select-dropdown'), 'contextless service options should replay through the active AntD dropdown');
+        assert(!code.includes("page.locator('div').filter({ hasText: /^HTTP: 80$/ }).nth(1).click();"), 'HTTP option must not keep the broad div/nth recorder locator');
+        assert(!code.includes("page.locator('div').filter({ hasText: /^HTTPS: 443$/ }).nth(1).click();"), 'HTTPS option must not keep the broad div/nth recorder locator');
+      }
     },
   },
   {
