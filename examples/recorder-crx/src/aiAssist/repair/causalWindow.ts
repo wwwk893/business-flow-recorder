@@ -11,6 +11,8 @@ export interface ReplayCausalWindow {
   rootCauseStepId: string;
   stepIds: string[];
   reason: string;
+  confidence?: number;
+  hypotheses?: string[];
 }
 
 export function buildReplayCausalWindow(flow: BusinessFlow, failure: ReplayRepairFailure): ReplayCausalWindow {
@@ -24,7 +26,22 @@ export function buildReplayCausalWindow(flow: BusinessFlow, failure: ReplayRepai
     };
   }
   const expectedDialog = expectedBeforeDialogTitle(symptom);
+  const hasActualBefore = failure.actualBefore !== undefined && failure.actualBefore !== null;
   const actualDialog = actualDialogTitle(failure.actualBefore);
+  if (expectedDialog && !hasActualBefore) {
+    const opener = findDialogOpener(flow, expectedDialog, symptom.order);
+    return {
+      symptomStepId: symptom.id,
+      rootCauseStepId: symptom.id,
+      stepIds: windowStepIds(flow, opener || symptom, symptom),
+      reason: `Actual before-state was not captured for ${symptom.id}; do not high-confidence blame the opener. Treat current locator as primary and include opener hypothesis if available.`,
+      confidence: 0.35,
+      hypotheses: [
+        'current-step-locator',
+        ...(opener ? [`possible-propagated-opener:${opener.id}`] : []),
+      ],
+    };
+  }
   if (expectedDialog && actualDialog !== expectedDialog) {
     const opener = findDialogOpener(flow, expectedDialog, symptom.order);
     if (opener) {
@@ -33,6 +50,8 @@ export function buildReplayCausalWindow(flow: BusinessFlow, failure: ReplayRepai
         rootCauseStepId: opener.id,
         stepIds: windowStepIds(flow, opener, symptom),
         reason: `${symptom.id} expected dialog ${expectedDialog}, but replay actual state did not have it; ${opener.id} is the closest opener/state transition step.`,
+        confidence: 0.85,
+        hypotheses: ['propagated-state-divergence'],
       };
     }
   }
@@ -41,6 +60,8 @@ export function buildReplayCausalWindow(flow: BusinessFlow, failure: ReplayRepai
     rootCauseStepId: symptom.id,
     stepIds: windowStepIds(flow, symptom, symptom),
     reason: 'Expected state is present or no upstream opener explains the failure; treat the failing step locator as the root cause.',
+    confidence: 0.8,
+    hypotheses: ['current-step-locator'],
   };
 }
 

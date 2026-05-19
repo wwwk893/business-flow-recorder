@@ -44,7 +44,8 @@ import { createDeepSeekV4FlashProfile, normalizeAiIntentSettings, normalizeProfi
 import { clearAiUsageRecords, loadAiApiKey, loadAiIntentSettings, loadAiProviderProfiles, loadAiUsageRecords, saveAiApiKey, saveAiIntentSettings, saveAiProviderProfiles, withApiKeyPreview } from './aiIntent/storage';
 import { usageRecordsToJsonl } from './aiIntent/usage';
 import type { AiIntentSettings, AiProviderProfile, AiUsageRecord } from './aiIntent/types';
-import { applyRecordingReviewPatch, createAiAssistProvider, defaultAiAssistProviderConfig, normalizeAiAssistProviderConfig, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
+import { applyRecordingReviewPatch, createAiAssistProvider, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
+import { aiAssistConfigFromSettings } from './aiAssist/providerConfig';
 import { countBusinessFlowPlaybackActions, generateBusinessFlowPlaybackCode, generateBusinessFlowPlaywrightCode } from './flow/codePreview';
 import { appendSyntheticPageContextStepsWithResult, clearFlowRecordingHistory, createAssertion, deleteStepFromFlow, insertEmptyStepAfter, insertWaitStepAfter, mergeActionsIntoFlow, nextAssertionId, normalizeFlowStepIds, type MergeDiagnosticEvent } from './flow/flowBuilder';
 import { mergePageContextIntoFlow, normalizeIntentSources } from './flow/flowContextMerger';
@@ -374,8 +375,48 @@ function runtimeLogsToJsonl(logs: RecorderDiagnosticLog[]) {
 function extractStepIdFromDiagnostic(log?: RecorderDiagnosticLog) {
   if (!log)
     return undefined;
+  const data = log.data || {};
+  const explicit = data.stepId || data.failedStepId || data.symptomStepId;
+  if (typeof explicit === 'string')
+    return explicit;
   const text = `${log.message}\n${JSON.stringify(log.data ?? {})}`;
   return text.match(/\b(s\d{3,}|step-\d+)\b/)?.[1];
+}
+
+function isAiAssistReplayFailureLog(log: RecorderDiagnosticLog) {
+  return [
+    'runtime.step.failed',
+    'runtime.action.failed',
+    'runtime.assertion.failed',
+    'runtime.playback.timeout',
+    'runtime.locator.strict-mode',
+    'runtime.locator.not-found',
+  ].includes(log.type) || /^runtime\.(step|action|assertion)\.failed$/.test(log.type);
+}
+
+function repairFailureFromDiagnostic(log?: RecorderDiagnosticLog) {
+  if (!log || !isAiAssistReplayFailureLog(log))
+    return undefined;
+  const data = log.data || {};
+  const symptomStepId = extractStepIdFromDiagnostic(log);
+  if (!symptomStepId)
+    return undefined;
+  const errorText = [
+    log.message,
+    typeof data.errorText === 'string' ? data.errorText : undefined,
+    typeof data.error === 'string' ? data.error : undefined,
+    typeof data.failedLocator === 'string' ? `failedLocator: ${data.failedLocator}` : undefined,
+    typeof data.failedCode === 'string' ? `failedCode: ${data.failedCode}` : undefined,
+  ].filter(Boolean).join('\n');
+  return {
+    symptomStepId,
+    errorType: log.type,
+    errorText: errorText || log.message,
+    failedCode: typeof data.failedCode === 'string' ? data.failedCode : undefined,
+    failedLocator: typeof data.failedLocator === 'string' ? data.failedLocator : undefined,
+    actualBefore: data.actualBefore,
+    actualAfter: data.actualAfter,
+  };
 }
 
 function isRuntimeLogExpanded(entry: RecorderDiagnosticLog, expandedIds: Set<number>) {
@@ -1198,7 +1239,7 @@ export const CrxRecorder: React.FC = ({
   }, [activeAiApiKey, activeAiProfile, flowAiIntentConfiguredEnabled]);
   const businessFlowCode = React.useMemo(() => generateBusinessFlowPlaywrightCode(flowDraft), [flowDraft]);
   const businessFlowPlaybackCode = React.useMemo(() => generateBusinessFlowPlaybackCode(flowDraft), [flowDraft]);
-  const aiAssistConfig = React.useMemo(() => normalizeAiAssistProviderConfig(defaultAiAssistProviderConfig), []);
+  const aiAssistConfig = React.useMemo(() => aiAssistConfigFromSettings(settings, activeAiProfile, activeAiApiKey), [activeAiApiKey, activeAiProfile, settings]);
   const generatedBusinessSources = React.useMemo(() => businessFlowSources(sources, businessFlowCode), [businessFlowCode, sources]);
   const generatedBusinessPlaybackSources = React.useMemo(() => businessFlowSources(sources, businessFlowPlaybackCode), [businessFlowPlaybackCode, sources]);
   const currentCodeText = settings.businessFlowEnabled === false ? source?.text : panelStage === 'replay' ? businessFlowPlaybackCode : businessFlowCode;
@@ -1454,9 +1495,12 @@ export const CrxRecorder: React.FC = ({
 
   const runAiAssistRepairAndRetry = React.useCallback(async () => {
     const flow = flowDraftRef.current;
-    const latestFailure = [...diagnosticLogs].reverse().find(log => log.level === 'warn' || /failed|error|timeout|runtime/i.test(log.type));
-    const fallbackStep = flow.steps[flow.steps.length - 1];
-    const symptomStepId = extractStepIdFromDiagnostic(latestFailure) || fallbackStep?.id || '';
+    const latestFailure = [...diagnosticLogs].reverse().find(isAiAssistReplayFailureLog);
+    const failure = repairFailureFromDiagnostic(latestFailure);
+    if (!failure) {
+      setAiAssistRepair({ status: 'error', message: '没有找到带 stepId 的明确回放失败日志。请先运行回放，或导出 runtime failure JSONL 后再修复。' });
+      return;
+    }
     setAiAssistRepair({ status: 'running', message: 'AI 正在分析回放失败并生成结构化 patch...' });
     aiAssistRepairRollbackRef.current = flow;
     const provider = createAiAssistProvider(aiAssistConfig);
@@ -1464,11 +1508,7 @@ export const CrxRecorder: React.FC = ({
       flow,
       provider,
       config: aiAssistConfig,
-      failure: {
-        symptomStepId,
-        errorType: latestFailure?.type,
-        errorText: latestFailure ? `${latestFailure.message}\n${JSON.stringify(latestFailure.data ?? {})}` : 'No runtime failure log was available; run replay first.',
-      },
+      failure,
     });
     if (result.validation?.ok && result.validation.appliedFlow) {
       const applied = result.validation.appliedFlow;
@@ -1476,12 +1516,28 @@ export const CrxRecorder: React.FC = ({
       setFlowDraft(applied);
       const playbackCode = generateBusinessFlowPlaybackCode(applied);
       window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
+      appendDiagnosticLog({
+        type: 'ai-assist.segment-replay-requested',
+        message: 'AI Repair patch 已应用，触发回放重试',
+        data: {
+          rootCauseStepId: result.validation.rootCauseStepId,
+          symptomStepId: failure.symptomStepId,
+        },
+      });
+      window.dispatch({ event: 'resume' }).catch(error => {
+        appendDiagnosticLog({
+          type: 'ai-assist.segment-replay-failed',
+          level: 'warn',
+          message: 'AI Repair 已刷新代码，但自动重试触发失败',
+          data: { error: String(error) },
+        });
+      });
       setPanelStage('replay');
       setActiveTab('code');
     }
     setAiAssistRepair({
       status: result.error ? 'error' : 'ready',
-      message: result.error || (result.validation?.ok ? 'AI Repair patch 已校验并写入临时 flow，已触发重试代码刷新。' : result.validation?.errors.join('；') || 'AI Repair 未通过校验。'),
+      message: result.error || (result.validation?.ok ? 'AI Repair patch 已校验并写入临时 flow，已触发回放重试。' : result.validation?.errors.join('；') || 'AI Repair 未通过校验。'),
       validation: result.validation,
       requestId: result.requestId,
     });
@@ -2101,13 +2157,17 @@ export const CrxRecorder: React.FC = ({
       },
     });
     await finalizeCurrentRecordingSession('stop-recording');
-    if (aiAssistConfig.reviewOnStopRecording)
+    if (aiAssistConfig.reviewOnStopRecording) {
+      setPanelStage('review');
+      setActiveTab('business');
       runAiAssistReview('stop-recording').catch(() => {});
+    } else {
+      setPanelStage('recording');
+      setActiveTab('business');
+    }
     setPageContextCaptureActive(false);
     pendingInsertRecordingRef.current = undefined;
     setInsertRecordingAfterStepId(undefined);
-    setPanelStage('recording');
-    setActiveTab('business');
     window.dispatch({ event: 'setMode', params: { mode: 'standby' } }).catch(() => {});
   }, [aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, setPageContextCaptureActive]);
 
@@ -2663,6 +2723,7 @@ export const CrxRecorder: React.FC = ({
                   onApplyAiReviewPatch={applyAiAssistReviewPatch}
                   onAiRepairAndRetry={runAiAssistRepairAndRetry}
                   onRollbackAiRepair={rollbackAiAssistRepair}
+                  showAiRepairButton={aiAssistConfig.repairOnFailureButton}
                   showStepToolbar={false}
                 />}
               </> : <FlowSelectionGuard
@@ -2705,6 +2766,7 @@ export const CrxRecorder: React.FC = ({
                 onApplyAiReviewPatch={applyAiAssistReviewPatch}
                 onAiRepairAndRetry={runAiAssistRepairAndRetry}
                 onRollbackAiRepair={rollbackAiAssistRepair}
+                showAiRepairButton={aiAssistConfig.repairOnFailureButton}
               />}
               {activeTab === 'code' && <div className='embedded-recorder'>
                 {settings.experimental && <div className='code-actions'>

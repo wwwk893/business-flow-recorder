@@ -26,9 +26,18 @@ export type CrxSettings = {
   defaultRepo?: string;
   defaultRole?: string;
   redactSensitiveData?: boolean;
+  aiAssistEnabled?: boolean;
+  aiAssistReviewOnStopRecording?: boolean;
+  aiAssistAutoApplyLowRiskReviewPatch?: boolean;
+  aiAssistRepairOnFailureButton?: boolean;
+  aiAssistProviderKind?: 'mock' | 'local' | 'private-http' | 'cloud-http' | 'disabled';
+  aiAssistAllowCloudProvider?: boolean;
+  aiAssistMaxContextChars?: number;
+  aiAssistTimeoutMs?: number;
+  aiAssistRetryLimit?: number;
 };
 
-export const defaultSettings = {
+export const defaultSettings: CrxSettings = {
   testIdAttributeName: 'data-testid',
   targetLanguage: 'playwright-test',
   sidepanel: true,
@@ -41,12 +50,45 @@ export const defaultSettings = {
   defaultRepo: '',
   defaultRole: '',
   redactSensitiveData: true,
+  aiAssistEnabled: false,
+  aiAssistReviewOnStopRecording: false,
+  aiAssistAutoApplyLowRiskReviewPatch: false,
+  aiAssistRepairOnFailureButton: true,
+  aiAssistProviderKind: 'private-http',
+  aiAssistAllowCloudProvider: false,
+  aiAssistMaxContextChars: 28_000,
+  aiAssistTimeoutMs: 20_000,
+  aiAssistRetryLimit: 0,
 };
+
+const settingsStorageKeys: (keyof CrxSettings)[] = [
+  'testIdAttributeName',
+  'targetLanguage',
+  'sidepanel',
+  'playInIncognito',
+  'experimental',
+  'businessFlowEnabled',
+  'semanticAdapterEnabled',
+  'semanticAdapterDiagnosticsEnabled',
+  'defaultApp',
+  'defaultRepo',
+  'defaultRole',
+  'redactSensitiveData',
+  'aiAssistEnabled',
+  'aiAssistReviewOnStopRecording',
+  'aiAssistAutoApplyLowRiskReviewPatch',
+  'aiAssistRepairOnFailureButton',
+  'aiAssistProviderKind',
+  'aiAssistAllowCloudProvider',
+  'aiAssistMaxContextChars',
+  'aiAssistTimeoutMs',
+  'aiAssistRetryLimit',
+];
 
 export async function loadSettings(): Promise<CrxSettings> {
   const [isAllowedIncognitoAccess, loadedPreferences] = await Promise.all([
     chrome.extension.isAllowedIncognitoAccess(),
-    chrome.storage.sync.get(['testIdAttributeName', 'targetLanguage', 'sidepanel', 'playInIncognito', 'experimental', 'businessFlowEnabled', 'semanticAdapterEnabled', 'semanticAdapterDiagnosticsEnabled', 'defaultApp', 'defaultRepo', 'defaultRole', 'redactSensitiveData']) as Partial<CrxSettings>,
+    chrome.storage.sync.get(settingsStorageKeys) as Partial<CrxSettings>,
   ]);
   return { ...defaultSettings, ...loadedPreferences, playInIncognito: !!loadedPreferences.playInIncognito && isAllowedIncognitoAccess };
 }
@@ -58,8 +100,8 @@ export async function storeSettings(settings: CrxSettings) {
 const listeners = new Map<(settings: CrxSettings) => void, any>();
 
 export function addSettingsChangedListener(listener: (settings: CrxSettings) => void) {
-  const wrappedListener = ({ testIdAttributeName, targetLanguage, sidepanel, playInIncognito, experimental, businessFlowEnabled, semanticAdapterEnabled, semanticAdapterDiagnosticsEnabled, defaultApp, defaultRepo, defaultRole, redactSensitiveData }: Record<string, chrome.storage.StorageChange>) => {
-    if (!testIdAttributeName && !targetLanguage && !sidepanel && !playInIncognito && !experimental && !businessFlowEnabled && !semanticAdapterEnabled && !semanticAdapterDiagnosticsEnabled && !defaultApp && !defaultRepo && !defaultRole && !redactSensitiveData)
+  const wrappedListener = (changes: Record<string, chrome.storage.StorageChange>) => {
+    if (!settingsStorageKeys.some(key => changes[key]))
       return;
 
     loadSettings().then(listener).catch(() => {});

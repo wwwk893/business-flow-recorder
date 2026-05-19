@@ -37,13 +37,20 @@ export interface ReplayRepairPatch {
 
 export type ReplayRepairPatchOperation =
   | {
-      op: 'insert-step' | 'unskip-step' | 'replace-recipe' | 'replace-locator' | 'replace-locator-scope' | 'delete-step' | 'add-assertion' | 'update-assertion';
-      stepId: string;
+      op: 'insert-step';
+      stepId?: string;
       insertBeforeStepId?: string;
       insertAfterStepId?: string;
+      step: Partial<BusinessFlow['steps'][number]>;
+      reason: string;
+    }
+  | {
+      op: 'unskip-step' | 'replace-recipe' | 'replace-locator' | 'replace-locator-scope' | 'delete-step' | 'add-assertion' | 'update-assertion';
+      stepId: string;
       recipe?: unknown;
       locator?: unknown;
       scope?: unknown;
+      assertion?: unknown;
       reason: string;
     };
 
@@ -52,6 +59,7 @@ export interface ReplayRepairFailure {
   errorType?: string;
   errorText: string;
   failedCode?: string;
+  failedLocator?: string;
   actualBefore?: unknown;
   actualAfter?: unknown;
 }
@@ -90,6 +98,8 @@ export interface ReplayRepairContext {
     rootCauseStepId: string;
     stepIds: string[];
     reason: string;
+    confidence?: number;
+    hypotheses?: string[];
   };
   locatorDiagnostics: unknown[];
   availableActionCandidates: unknown[];

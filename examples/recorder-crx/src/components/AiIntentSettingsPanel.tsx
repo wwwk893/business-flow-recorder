@@ -143,7 +143,18 @@ export const AiIntentSettingsPanel: React.FC<{
           <input type='number' min={0} value={settings.debounceMs} onChange={e => onSettingsChange({ ...settings, debounceMs: Number(e.target.value) || 0 })} />
         </label>
       </div>
-      {activeProfile && <div className='ai-profile-card'>
+      <div className='ai-action-row'>
+        <button type='button' className='primary' onClick={onGenerate} disabled={generating}>{generating ? 'AI 生成中...' : 'Generate AI Intents'}</button>
+      </div>
+      {status && <div className='ai-status'>{status}</div>}
+    </details>
+
+    <details className='settings-section'>
+      <summary>
+        <span>AI Provider</span>
+        <em>{activeProfile?.protocol || '未配置'}</em>
+      </summary>
+      {activeProfile ? <div className='ai-profile-card'>
         <div className='section-heading row'>
           <span>Provider 配置</span>
           <span>{activeProfile.protocol}</span>
@@ -193,17 +204,56 @@ export const AiIntentSettingsPanel: React.FC<{
           <PriceInput label='Request fee' value={activeProfile.pricing.requestFee} onChange={value => updatePricing('requestFee', value)} />
         </div>
         <div className='ai-profile-actions'>
+          <button type='button' onClick={onTestConnection} disabled={generating}>Test Connection</button>
+          <button type='button' onClick={onOpenUsage}>Open Usage</button>
           <button type='button' onClick={() => createProfile('openai-compatible')}>新增 OpenAI</button>
           <button type='button' onClick={() => createProfile('anthropic-compatible')}>新增 Anthropic</button>
           <button type='button' className='danger-outline' onClick={deleteProfile} disabled={profiles.length <= 1}>删除 Profile</button>
         </div>
-      </div>}
-      <div className='ai-action-row'>
-        <button type='button' onClick={onTestConnection} disabled={generating}>Test Connection</button>
-        <button type='button' className='primary' onClick={onGenerate} disabled={generating}>{generating ? 'AI 生成中...' : 'Generate AI Intents'}</button>
-        <button type='button' onClick={onOpenUsage}>Open Usage</button>
+      </div> : <div className='ai-privacy-note'>暂无 Provider Profile。请先新增 OpenAI-compatible 或 Anthropic-compatible profile。</div>}
+    </details>
+
+    <details className='settings-section'>
+      <summary>
+        <span>AI 审查</span>
+        <em>{crxSettings.aiAssistEnabled ? '已启用' : '未启用'}</em>
+      </summary>
+      <div className='ai-settings-grid'>
+        <label className='checkbox-row'>
+          <input type='checkbox' checked={!!crxSettings.aiAssistEnabled} onChange={e => updateCrxSettings({ aiAssistEnabled: e.target.checked })} />
+          启用 AI 审查 / 修复
+        </label>
+        <label className='checkbox-row'>
+          <input type='checkbox' checked={!!crxSettings.aiAssistReviewOnStopRecording} onChange={e => updateCrxSettings({ aiAssistReviewOnStopRecording: e.target.checked })} />
+          停止录制后自动审查
+        </label>
+        <label className='checkbox-row'>
+          <input type='checkbox' checked={!!crxSettings.aiAssistAutoApplyLowRiskReviewPatch} onChange={e => updateCrxSettings({ aiAssistAutoApplyLowRiskReviewPatch: e.target.checked })} />
+          自动应用低风险 Review patch
+        </label>
+        <label className='checkbox-row'>
+          <input type='checkbox' checked={crxSettings.aiAssistRepairOnFailureButton !== false} onChange={e => updateCrxSettings({ aiAssistRepairOnFailureButton: e.target.checked })} />
+          显示回放失败 AI 修复按钮
+        </label>
+        <label>
+          Provider kind
+          <select value={crxSettings.aiAssistProviderKind || 'private-http'} onChange={e => updateCrxSettings({ aiAssistProviderKind: e.target.value as CrxSettings['aiAssistProviderKind'] })}>
+            <option value='private-http'>Private HTTP</option>
+            <option value='local'>Local</option>
+            <option value='cloud-http'>Cloud HTTP</option>
+            <option value='mock'>Mock</option>
+            <option value='disabled'>Disabled</option>
+          </select>
+        </label>
+        <label className='checkbox-row'>
+          <input type='checkbox' checked={!!crxSettings.aiAssistAllowCloudProvider} onChange={e => updateCrxSettings({ aiAssistAllowCloudProvider: e.target.checked })} />
+          允许 Cloud Provider
+        </label>
+        <label>Max context chars<input type='number' min={4000} value={crxSettings.aiAssistMaxContextChars ?? 28000} onChange={e => updateCrxSettings({ aiAssistMaxContextChars: Number(e.target.value) || 28000 })} /></label>
+        <label>Timeout ms<input type='number' min={1000} value={crxSettings.aiAssistTimeoutMs ?? 20000} onChange={e => updateCrxSettings({ aiAssistTimeoutMs: Number(e.target.value) || 20000 })} /></label>
+        <label>Retry limit<input type='number' min={0} max={2} value={crxSettings.aiAssistRetryLimit ?? 0} onChange={e => updateCrxSettings({ aiAssistRetryLimit: Number(e.target.value) || 0 })} /></label>
       </div>
-      {status && <div className='ai-status'>{status}</div>}
+      <div className='ai-privacy-note'>AI 审查复用上方 AI Provider 的 Base URL、Model、API Key 和响应模式。上下文会先脱敏，不发送 cookie、storage、完整 DOM、Authorization、API Key 或完整内网 URL。</div>
     </details>
 
     <details className='settings-section'>

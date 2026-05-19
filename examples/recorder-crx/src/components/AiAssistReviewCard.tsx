@@ -28,7 +28,8 @@ export const AiAssistReviewCard: React.FC<{
   onApplyReviewPatch: () => void;
   onRepairAndRetry: () => void;
   onRollbackRepair: () => void;
-}> = ({ review, repair, onRunReview, onApplyReviewPatch, onRepairAndRetry, onRollbackRepair }) => {
+  showRepairButton?: boolean;
+}> = ({ review, repair, onRunReview, onApplyReviewPatch, onRepairAndRetry, onRollbackRepair, showRepairButton = true }) => {
   const issueCount = review.patch?.issues.length ?? 0;
   return <section className='ai-assist-card' aria-label='AI Review 与 AI Repair'>
     <div className='section-title'>
@@ -52,7 +53,7 @@ export const AiAssistReviewCard: React.FC<{
         </div>
         <button type='button' className='mini-button' disabled={!review.validation?.ok || !review.validation?.autoApply} onClick={onApplyReviewPatch}>应用并验证</button>
       </div>}
-      <div className='review-card'>
+      {showRepairButton && <div className='review-card'>
         <span className={`risk ${repair.status === 'error' ? 'p1' : repair.status === 'ready' ? 'ok' : 'p1'}`}>{repair.status}</span>
         <div>
           <strong>回放失败 AI 修复并重试</strong>
@@ -60,7 +61,7 @@ export const AiAssistReviewCard: React.FC<{
         </div>
         <button type='button' className='mini-button' disabled={repair.status === 'running'} onClick={onRepairAndRetry}>AI 修复并重试</button>
         <button type='button' className='mini-button' disabled={repair.status === 'idle'} onClick={onRollbackRepair}>回滚</button>
-      </div>
+      </div>}
     </div>
   </section>;
 };

@@ -18,4 +18,26 @@ export const causalWindowTests: AiAssistTestCase[] = [{
     assertEqual(window.rootCauseStepId, 's007');
     assertEqual(window.symptomStepId, 's009');
   },
+}, {
+  name: 'AI Repair causal window does not blame opener when actual before-state is missing',
+  run: () => {
+    const window = buildReplayCausalWindow(createLanPropagatedFlow(), {
+      symptomStepId: 's009',
+      errorType: 'runtime.locator.strict-mode',
+      errorText: 'strict mode violation',
+    });
+    assertEqual(window.rootCauseStepId, 's009');
+    assertEqual(window.symptomStepId, 's009');
+  },
+}, {
+  name: 'AI Repair causal window keeps strict-mode locator root on symptom when expected dialog is present',
+  run: () => {
+    const window = buildReplayCausalWindow(createLanPropagatedFlow(), {
+      symptomStepId: 's009',
+      errorType: 'runtime.locator.strict-mode',
+      errorText: 'strict mode violation',
+      actualBefore: { dialog: { title: '编辑LAN1' } },
+    });
+    assertEqual(window.rootCauseStepId, 's009');
+  },
 }];

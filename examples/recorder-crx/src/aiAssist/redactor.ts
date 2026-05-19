@@ -8,11 +8,15 @@ const sensitiveKeyPattern = /(password|passwd|pwd|token|cookie|authorization|aut
 const dropKeyPattern = /^(dom|html|outerHTML|innerHTML|cookie|cookies|localStorage|sessionStorage|storageState|responseBody|fullDom|screenshot|trace)$/i;
 const jwtPattern = /\beyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\b/g;
 const apiKeyPattern = /\b(?:sk|rk|pk|ak)-[A-Za-z0-9][A-Za-z0-9_-]{10,}\b/g;
+const cliproxyApiKeyPattern = /\bcpa_pub_[A-Za-z0-9_-]{16,}\b/g;
 const bearerPattern = /bearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const querySecretPattern = /([?&](?:token|access_token|auth|authorization|session|secret|api_key|apikey)=)[^&#]+/gi;
 const longOpaquePattern = /\b[A-Za-z0-9+/=_-]{96,}\b/g;
 const emailPattern = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const phonePattern = /\b(?:\+?86[- ]?)?1[3-9]\d{9}\b/g;
+const urlPattern = /https?:\/\/[^\s"'<>]+/gi;
+const ipv4Pattern = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
+const ipv6Pattern = /\b(?:[A-F0-9]{1,4}:){2,}[A-F0-9]{1,4}\b/gi;
 
 export interface AiAssistRedactionResult<T> {
   value: T;
@@ -20,15 +24,29 @@ export interface AiAssistRedactionResult<T> {
 }
 
 export function redactAiAssistText(value: string, maxLength = 20_000): string {
-  return value
+  return redactUrlHosts(value)
       .replace(jwtPattern, '***token***')
       .replace(apiKeyPattern, '***api-key***')
+      .replace(cliproxyApiKeyPattern, '***api-key***')
       .replace(bearerPattern, 'Bearer ***token***')
       .replace(querySecretPattern, '$1***token***')
+      .replace(ipv4Pattern, '[IP]')
+      .replace(ipv6Pattern, '[IP]')
       .replace(longOpaquePattern, '***token***')
       .replace(emailPattern, '***email***')
       .replace(phonePattern, '***phone***')
       .slice(0, maxLength);
+}
+
+function redactUrlHosts(value: string) {
+  return value.replace(urlPattern, raw => {
+    try {
+      const url = new URL(raw);
+      return `${url.protocol}//[HOST]${url.pathname}`;
+    } catch {
+      return raw.replace(/https?:\/\/[^/\s?#]+/i, match => match.startsWith('https') ? 'https://[HOST]' : 'http://[HOST]');
+    }
+  });
 }
 
 export function redactAiAssistValue<T>(value: T, options: { maxStringLength?: number } = {}): AiAssistRedactionResult<T> {

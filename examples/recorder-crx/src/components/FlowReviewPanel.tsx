@@ -48,8 +48,9 @@ export const FlowReviewPanel: React.FC<{
   onApplyAiReviewPatch?: () => void;
   onAiRepairAndRetry?: () => void;
   onRollbackAiRepair?: () => void;
+  showAiRepairButton?: boolean;
   showStepToolbar?: boolean;
-}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, aiAssistReview, aiAssistRepair, onRunAiReview, onApplyAiReviewPatch, onAiRepairAndRetry, onRollbackAiRepair, showStepToolbar = true }) => {
+}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, aiAssistReview, aiAssistRepair, onRunAiReview, onApplyAiReviewPatch, onAiRepairAndRetry, onRollbackAiRepair, showAiRepairButton = true, showStepToolbar = true }) => {
   const stats = flowStats(flow);
   const repeatStats = repeatSegmentStats(flow);
   const [activeInsertStepId, setActiveInsertStepId] = React.useState<string>();
@@ -156,6 +157,7 @@ export const FlowReviewPanel: React.FC<{
       onApplyReviewPatch={onApplyAiReviewPatch}
       onRepairAndRetry={onAiRepairAndRetry}
       onRollbackRepair={onRollbackAiRepair}
+      showRepairButton={showAiRepairButton}
     />}
     {mode === 'steps' && <>
       <div className='review-summary-grid'>

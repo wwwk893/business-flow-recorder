@@ -206,6 +206,8 @@ export interface FlowStep {
       locatorContractHint?: unknown;
       lastPatchId?: string;
       lastPatchReason?: string;
+      lastPatchIds?: string[];
+      lastPatchReasons?: string[];
     };
   };
 }

@@ -41,8 +41,14 @@ export interface AiAssistProviderConfig {
   autoApplyLowRiskReviewPatch: boolean;
   repairOnFailureButton: boolean;
   providerKind: AiAssistProviderKind;
+  protocol?: 'openai-compatible' | 'anthropic-compatible';
   endpoint?: string;
   model?: string;
+  apiKey?: string;
+  responseMode?: 'json_object' | 'json_schema' | 'prompt_json_only';
+  thinking?: 'disabled' | 'enabled' | 'omit';
+  temperature?: number;
+  maxTokens?: number;
   maxContextChars: number;
   allowCloudProvider: boolean;
   timeoutMs: number;

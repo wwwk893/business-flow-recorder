@@ -41,8 +41,24 @@ export function validateReplayRepairPatchShape(value: unknown, context?: ReplayR
   for (const op of Array.isArray(patch.patches) ? patch.patches : []) {
     if (!patchOps.has(op?.op))
       errors.push(`unsupported op ${op?.op}`);
-    if (!knownStep(op?.stepId, stepIds))
+    if (op?.op === 'insert-step') {
+      if (!isObject(op.step))
+        errors.push('insert-step requires structured step');
+      if (!knownStep(op.insertBeforeStepId, stepIds) && !knownStep(op.insertAfterStepId, stepIds))
+        errors.push('insert-step requires known insertBeforeStepId or insertAfterStepId');
+    } else if (!knownStep(op?.stepId, stepIds)) {
       errors.push(`unknown patch stepId ${op?.stepId}`);
+    }
+    if (op?.op === 'replace-recipe' && !isObject(op.recipe))
+      errors.push(`replace-recipe requires recipe object for ${op?.stepId}`);
+    if (op?.op === 'replace-locator' && !isObject(op.locator))
+      errors.push(`replace-locator requires locator object for ${op?.stepId}`);
+    if (op?.op === 'replace-locator-scope' && !isObject(op.scope))
+      errors.push(`replace-locator-scope requires scope object for ${op?.stepId}`);
+    if ((op?.op === 'add-assertion' || op?.op === 'update-assertion') && !isObject(op.assertion))
+      errors.push(`${op.op} requires assertion object for ${op?.stepId}`);
+    if (op?.op === 'delete-step')
+      errors.push(`delete-step requires explicit human confirmation and is safety-rejected by AI Assist for ${op?.stepId}`);
     if (typeof op?.reason !== 'string')
       errors.push(`patch reason missing for ${op?.stepId}`);
   }
@@ -59,4 +75,8 @@ export function validateReplayRepairPatchShape(value: unknown, context?: ReplayR
 
 function knownStep(value: unknown, stepIds?: Set<string>) {
   return typeof value === 'string' && (!stepIds || stepIds.has(value));
+}
+
+function isObject(value: unknown) {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }

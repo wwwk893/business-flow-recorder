@@ -4,7 +4,7 @@
  * Licensed under the Apache License, Version 2.0 (the "License");
  */
 export { createAiAssistProvider, DisabledProvider, HttpAiAssistProvider, MockProvider } from './provider';
-export { defaultAiAssistProviderConfig, normalizeAiAssistProviderConfig } from './providerConfig';
+export { aiAssistConfigFromSettings, defaultAiAssistProviderConfig, normalizeAiAssistProviderConfig } from './providerConfig';
 export { redactAiAssistContext, redactAiAssistText, redactAiAssistValue } from './redactor';
 export type { AiAssistProvider, AiAssistProviderConfig, AiAssistProviderKind, AiAssistRawResponse } from './types';
 

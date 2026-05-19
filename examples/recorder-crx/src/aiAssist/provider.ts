@@ -7,6 +7,7 @@ import { normalizeAiAssistProviderConfig } from './providerConfig';
 import { redactAiAssistContext, redactAiAssistText } from './redactor';
 import type { AiAssistProvider, AiAssistProviderCallBody, AiAssistProviderConfig, AiAssistRawResponse } from './types';
 import { AiAssistProviderError } from './types';
+import { endpointWithPath } from '../aiIntent/providerUtils';
 
 export class DisabledProvider implements AiAssistProvider {
   readonly id = 'disabled';
@@ -90,7 +91,7 @@ export class HttpAiAssistProvider implements AiAssistProvider {
     };
 
     const startedAt = performanceNow();
-    const raw = await retry(() => fetchJson(this.config.endpoint!, body, this.config.timeoutMs, signal), this.config.retryLimit);
+    const raw = await retry(() => fetchProviderJson(this.config, body, this.config.timeoutMs, signal), this.config.retryLimit);
     const rawOutput = normalizeRawOutput(raw);
     return {
       providerId: this.id,
@@ -119,16 +120,44 @@ export function createAiAssistRequestId() {
   return `aiassist-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-async function fetchJson(endpoint: string, body: AiAssistProviderCallBody, timeoutMs: number, outerSignal?: AbortSignal): Promise<unknown> {
+async function fetchProviderJson(config: AiAssistProviderConfig, body: AiAssistProviderCallBody, timeoutMs: number, outerSignal?: AbortSignal): Promise<unknown> {
+  if (config.protocol === 'anthropic-compatible')
+    throw new AiAssistProviderError('AI Assist currently supports OpenAI-compatible provider profiles. Select an OpenAI-compatible AI Provider profile for AI 审查.', createAiAssistRequestId(), config.providerKind);
+  return fetchOpenAiCompatibleJson(config, body, timeoutMs, outerSignal);
+}
+
+async function fetchOpenAiCompatibleJson(config: AiAssistProviderConfig, body: AiAssistProviderCallBody, timeoutMs: number, outerSignal?: AbortSignal): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();
   outerSignal?.addEventListener('abort', abort, { once: true });
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (config.apiKey)
+    headers.Authorization = `Bearer ${config.apiKey}`;
+  const requestBody: Record<string, unknown> = {
+    model: body.model,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a Business Flow Recorder AI assist agent. Return only the requested strict JSON patch. Do not return Markdown or TypeScript code.',
+      },
+      { role: 'user', content: body.prompt },
+    ],
+    temperature: config.temperature ?? 0.1,
+    max_tokens: config.maxTokens ?? 1200,
+    stream: false,
+  };
+  if (config.responseMode === 'json_object')
+    requestBody.response_format = { type: 'json_object' };
+  if (config.thinking === 'disabled')
+    requestBody.thinking = { type: 'disabled' };
+  if (config.thinking === 'enabled')
+    requestBody.thinking = { type: 'enabled' };
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetch(endpointWithPath(config.endpoint || '', '/chat/completions'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers,
+      body: JSON.stringify(requestBody),
       signal: controller.signal,
     });
     const text = await response.text();
@@ -136,7 +165,7 @@ async function fetchJson(endpoint: string, body: AiAssistProviderCallBody, timeo
       throw new Error(`HTTP ${response.status}: ${redactAiAssistText(text, 400) || response.statusText}`);
     return text ? JSON.parse(text) : {};
   } finally {
-    window.clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
     outerSignal?.removeEventListener('abort', abort);
   }
 }
