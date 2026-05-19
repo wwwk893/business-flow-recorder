@@ -1,0 +1,100 @@
+{
+  "name": "nested_modal_confirm_scope",
+  "title": "Nested modal confirm uses broad title filter and click is intercepted",
+  "task_type": "replay_repair",
+  "failure": {
+    "symptomStepId": "s006",
+    "errorType": "PointerInterceptedTimeout",
+    "errorText": "Click confirm in 增加传输网络 timed out; .ant-modal-content subtree intercepts pointer events while nested modal is topmost."
+  },
+  "flowSummary": {
+    "steps": [
+      {
+        "id": "s001",
+        "action": "click",
+        "intent": "Open 新增共享 WAN",
+        "target": {
+          "testId": "ha-wan-add-button"
+        }
+      },
+      {
+        "id": "s002",
+        "action": "select",
+        "intent": "Select WAN1",
+        "target": {
+          "testId": "ha-wan-wan-index-select",
+          "value": "WAN1"
+        }
+      },
+      {
+        "id": "s005",
+        "action": "click",
+        "intent": "Open 增加传输网络 nested modal",
+        "target": {
+          "testId": "ha-wan-transport-add-button"
+        }
+      },
+      {
+        "id": "s006",
+        "action": "click",
+        "intent": "Confirm 增加传输网络",
+        "target": {
+          "testId": "ha-wan-transport-modal",
+          "role": "button",
+          "name": "确定",
+          "dialogTitle": "增加传输网络"
+        }
+      }
+    ]
+  },
+  "emittedCodeMap": {
+    "s006": "await page.locator(\".ant-modal, .ant-drawer, [role=\\\"dialog\\\"]\").filter({ hasText: \"增加传输网络\" }).getByRole(\"button\", { name: /^(确定|确\\s*定)$/ }).click();"
+  },
+  "replayTrace": {
+    "expectedStates": [
+      "Topmost visible modal root ha-wan-transport-modal contains confirm button."
+    ],
+    "actualStates": [
+      "Broad title filter resolves inside a covered modal root."
+    ],
+    "stateDiffs": [
+      {
+        "firstDivergenceStepId": "s006",
+        "expected": "modal root testId scope",
+        "actual": "title-only root filter"
+      }
+    ]
+  },
+  "locatorDiagnostics": [
+    {
+      "stepId": "s006",
+      "kind": "nested-modal-root-scope",
+      "evidence": "Recorded testId ha-wan-transport-modal should own confirm action."
+    }
+  ],
+  "availableActionCandidates": [
+    {
+      "stepId": "s006",
+      "candidate": "page.getByTestId('ha-wan-transport-modal').last().getByRole('button', { name: /^(确定|确\\s*定)$/ })"
+    }
+  ],
+  "expected": {
+    "failureKind": "current-step-locator",
+    "rootCauseStepId": "s006",
+    "symptomStepId": "s006",
+    "requiredPatchOps": [
+      "replace-locator-scope"
+    ],
+    "requiredKeywords": [
+      "ha-wan-transport-modal",
+      "visible",
+      "topmost",
+      "增加传输网络"
+    ],
+    "forbiddenKeywords": [
+      "force: true",
+      "global text",
+      "getByText"
+    ]
+  }
+}

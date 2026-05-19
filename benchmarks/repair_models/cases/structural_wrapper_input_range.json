@@ -1,0 +1,103 @@
+{
+  "name": "structural_wrapper_input_range",
+  "title": "ProComponents range field wrapper testId is filled directly instead of child input",
+  "task_type": "replay_repair",
+  "failure": {
+    "symptomStepId": "s007",
+    "errorType": "WrapperFillTimeout",
+    "errorText": "page.getByTestId('wan-ip-address-pool-range-field').fill('1.1.1.1') waits on a structural wrapper, not the actual start input."
+  },
+  "flowSummary": {
+    "steps": [
+      {
+        "id": "s002",
+        "action": "fill",
+        "intent": "Fill 地址池名称",
+        "target": {
+          "dialogTitle": "新建IPv4地址池",
+          "formItemLabel": "地址池名称",
+          "value": "test1"
+        }
+      },
+      {
+        "id": "s007",
+        "action": "fill",
+        "intent": "Fill start address",
+        "target": {
+          "testId": "wan-ip-address-pool-range-field",
+          "fieldName": "pool.start",
+          "placeholder": "开始地址，例如：192.168.1.1",
+          "value": "1.1.1.1",
+          "library": "pro-components"
+        }
+      },
+      {
+        "id": "s009",
+        "action": "fill",
+        "intent": "Fill end address",
+        "target": {
+          "testId": "wan-ip-address-pool-range-field",
+          "fieldName": "pool.end",
+          "placeholder": "结束地址，例如：192.168.1.254",
+          "value": "2.2.2.2",
+          "library": "pro-components"
+        }
+      }
+    ]
+  },
+  "emittedCodeMap": {
+    "s007": "await page.getByTestId(\"wan-ip-address-pool-range-field\").fill(\"1.1.1.1\");",
+    "s009": "await page.getByTestId(\"wan-ip-address-pool-range-field\").fill(\"2.2.2.2\");"
+  },
+  "replayTrace": {
+    "expectedStates": [
+      "Range wrapper contains separate start/end child inputs."
+    ],
+    "actualStates": [
+      "Renderer filled the wrapper testId directly and never reached child input."
+    ],
+    "stateDiffs": [
+      {
+        "firstDivergenceStepId": "s007",
+        "expected": "wrapper + fieldName/placeholder child input",
+        "actual": "wrapper .fill()"
+      }
+    ]
+  },
+  "locatorDiagnostics": [
+    {
+      "stepId": "s007",
+      "kind": "structural-wrapper-as-input",
+      "evidence": "Same wrapper testId is shared by pool.start and pool.end; fieldName/placeholder must distinguish child inputs."
+    }
+  ],
+  "availableActionCandidates": [
+    {
+      "stepId": "s007",
+      "candidate": "page.getByTestId('wan-ip-address-pool-range-field').getByPlaceholder('开始地址，例如：192.168.1.1')"
+    },
+    {
+      "stepId": "s009",
+      "candidate": "page.getByTestId('wan-ip-address-pool-range-field').getByPlaceholder('结束地址，例如：192.168.1.254')"
+    }
+  ],
+  "expected": {
+    "failureKind": "current-step-locator",
+    "rootCauseStepId": "s007",
+    "symptomStepId": "s007",
+    "requiredPatchOps": [
+      "replace-locator-scope"
+    ],
+    "requiredKeywords": [
+      "wrapper",
+      "fieldName",
+      "pool.start",
+      "placeholder"
+    ],
+    "forbiddenKeywords": [
+      "getByTestId(\"wan-ip-address-pool-range-field\").fill",
+      "nth(",
+      "global placeholder"
+    ]
+  }
+}
