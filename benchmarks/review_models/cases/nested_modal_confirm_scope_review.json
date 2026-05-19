@@ -1,0 +1,56 @@
+{
+  "name": "nested_modal_confirm_scope_review",
+  "title": "Nested modal confirm should use recorded modal root scope",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-nested-modal",
+    "steps": [
+      {
+        "id": "s005",
+        "order": 1,
+        "action": "click",
+        "target": { "testId": "ha-wan-transport-add-button", "text": "增加传输网络" },
+        "context": { "after": { "openedDialog": { "title": "增加传输网络", "type": "modal", "visible": true, "testId": "ha-wan-transport-modal" } } }
+      },
+      {
+        "id": "s006",
+        "order": 2,
+        "action": "click",
+        "target": { "text": "确定", "scope": { "dialog": { "title": "增加传输网络", "testId": "ha-wan-transport-modal" } } },
+        "context": {
+          "before": { "dialog": { "title": "增加传输网络", "type": "modal", "visible": true, "testId": "ha-wan-transport-modal" } },
+          "after": { "dialog": { "title": "新增共享 WAN", "type": "modal", "visible": true, "testId": "ha-wan-modal" } }
+        }
+      }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.locator(\".ant-modal, .ant-drawer, [role=\\\"dialog\\\"]\").filter({ hasText: \"增加传输网络\" }).getByRole(\"button\", { name: /^(确定|确\\\\s*定)$/ }).click();",
+      "parserSafeCode": "await page.locator(\".ant-modal, .ant-drawer, [role=\\\"dialog\\\"]\").filter({ hasText: \"增加传输网络\" }).getByRole(\"button\", { name: /^(确定|确\\\\s*定)$/ }).click();",
+      "emittedCodeMap": {
+        "s005": { "stepId": "s005", "emitted": true },
+        "s006": { "stepId": "s006", "emitted": true, "risks": ["unscoped-dialog-action", "nested-modal-title-only"] }
+      }
+    },
+    "reviewSignals": [
+      { "stepId": "s006", "severity": "high", "kind": "unscoped-dialog-action", "message": "Confirm button uses title-only modal filter even though recorded modal root testId is available.", "relatedStepIds": ["s005"] }
+    ],
+    "locatorDiagnostics": [
+      { "stepId": "s006", "source": "generated", "locator": "title-only dialog confirm", "strategy": "dialog-title", "risk": "high" },
+      { "stepId": "s006", "source": "recorded", "locator": "ha-wan-transport-modal", "strategy": "dialog-testid", "risk": "low" }
+    ],
+    "stateTransitions": [
+      { "stepId": "s006", "expectedEffect": "closes-dialog", "before": { "dialog": { "title": "增加传输网络", "testId": "ha-wan-transport-modal" } }, "risk": "high" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "high",
+    "issueKinds": ["weak-locator"],
+    "rootCauseStepIds": ["s006"],
+    "affectedStepIds": ["s006"],
+    "requiredPatchOps": ["replace-locator-scope"],
+    "requiredKeywords": ["ha-wan-transport-modal", "visible", "topmost"],
+    "forbiddenKeywords": ["title-only", "waitForTimeout", "force click"],
+    "noIssueExpected": false
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "name": "critical_delete_action_unsafe_review",
+  "title": "Critical row delete must not be repaired with global text or nth",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-critical-delete",
+    "steps": [
+      {
+        "id": "s004",
+        "order": 1,
+        "action": "click",
+        "target": {
+          "text": "删除",
+          "scope": { "table": { "testId": "wan-device-table", "rowKey": "WAN1", "rowText": "WAN1 主链路" } }
+        },
+        "uiRecipe": { "kind": "table-row-action", "operation": "delete", "rowKey": "WAN1" },
+        "context": {
+          "before": { "table": { "testId": "wan-device-table", "rowKey": "WAN1", "rowText": "WAN1 主链路" } },
+          "after": { "openedDialog": { "title": "确认删除", "type": "popconfirm", "visible": true } }
+        }
+      }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.getByText(\"删除\").nth(0).click();",
+      "parserSafeCode": "await page.getByText(\"删除\").nth(0).click();",
+      "emittedCodeMap": {
+        "s004": { "stepId": "s004", "emitted": true, "parserSafeCode": "await page.getByText(\"删除\").nth(0).click();", "risks": ["global-text", "unscoped-nth", "critical-delete"] }
+      }
+    },
+    "reviewSignals": [
+      { "stepId": "s004", "severity": "critical", "kind": "unscoped-table-row-action", "message": "Delete action has stable table rowKey but generated code uses global text/nth; may delete the wrong row." },
+      { "stepId": "s004", "severity": "critical", "kind": "safety-preflight-blocked", "message": "Critical row action cannot use global getByText or unscoped nth." }
+    ],
+    "locatorDiagnostics": [
+      { "stepId": "s004", "source": "generated", "locator": "page.getByText(\"删除\").nth(0)", "strategy": "global-text-ordinal", "risk": "critical" },
+      { "stepId": "s004", "source": "locator-contract", "locator": "wan-device-table[data-row-key=WAN1] >> delete action", "strategy": "row-scoped-testid", "risk": "low" }
+    ],
+    "stateTransitions": [
+      { "stepId": "s004", "expectedEffect": "table-row-action", "risk": "high" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "critical",
+    "issueKinds": ["unscoped-table-row-action"],
+    "rootCauseStepIds": ["s004"],
+    "affectedStepIds": ["s004"],
+    "requiredPatchOps": ["replace-locator-scope"],
+    "requiredKeywords": ["rowKey", "WAN1", "wan-device-table", "delete"],
+    "forbiddenKeywords": ["getByText(\"删除\")", "nth(0)", "long CSS", "force click"],
+    "noIssueExpected": false
+  }
+}

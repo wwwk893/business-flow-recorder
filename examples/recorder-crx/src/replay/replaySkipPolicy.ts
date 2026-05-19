@@ -53,6 +53,8 @@ export function createReplaySkipPolicy(mode: ReplaySkipMode, hooks: ReplaySkipPo
     },
 
     shouldSkipTopLevelStep(context: TopLevelReplaySkipContext) {
+      if (context.step.artifacts?.aiAssist?.forceEmit)
+        return false;
       if (shouldSkipCommonStep(context, mode, hooks))
         return true;
       if (hooks.isDuplicateSyntheticEchoClick(context.step, context.steps[context.index - 1]))
@@ -88,6 +90,8 @@ function shouldSkipCommonStep(context: RepeatReplaySkipContext, mode: ReplaySkip
 
 function shouldSkipRepeatStep(context: RepeatReplaySkipContext, mode: ReplaySkipMode, hooks: ReplaySkipPolicyHooks) {
   const { step, steps, index, previousEmittedStep } = context;
+  if (step.artifacts?.aiAssist?.forceEmit)
+    return false;
   const previousStep = steps[index - 1];
   const nextStep = steps[index + 1];
   const nextEffectiveStep = hooks.nextEffectiveStepForRedundantAction(steps, index, mode);

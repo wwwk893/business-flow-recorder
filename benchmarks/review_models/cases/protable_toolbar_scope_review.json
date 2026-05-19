@@ -1,0 +1,57 @@
+{
+  "name": "protable_toolbar_scope_review",
+  "title": "ProTable toolbar create should not become global first new button",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-protable-toolbar",
+    "steps": [
+      {
+        "id": "s001",
+        "order": 1,
+        "action": "click",
+        "target": {
+          "role": "button",
+          "name": "plus 新建",
+          "testId": "lan-device-section",
+          "scope": { "section": { "title": "LAN定义", "testId": "lan-device-section" } }
+        },
+        "context": {
+          "before": {
+            "section": { "title": "LAN定义", "testId": "lan-device-section" },
+            "target": { "role": "button", "name": "plus 新建", "uniqueness": { "pageCount": 4, "pageIndex": 0 } }
+          },
+          "after": { "openedDialog": { "title": "新建LAN定义", "type": "modal", "visible": true } }
+        }
+      }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.waitForTimeout(300);\nawait page.getByRole(\"button\", { name: \"新建\" }).nth(0).click({ force: true });",
+      "parserSafeCode": "await page.waitForTimeout(300);\nawait page.getByRole(\"button\", { name: \"新建\" }).nth(0).click({ force: true });",
+      "emittedCodeMap": {
+        "s001": { "stepId": "s001", "emitted": true, "parserSafeCode": "await page.getByRole(\"button\", { name: \"新建\" }).nth(0).click({ force: true });", "risks": ["unscoped-nth", "force-click", "duplicate-button"] }
+      }
+    },
+    "reviewSignals": [
+      { "stepId": "s001", "severity": "high", "kind": "duplicate-testid", "message": "New button is duplicated across sections; generated code uses global nth instead of LAN定义 section scope." },
+      { "stepId": "s001", "severity": "high", "kind": "safety-preflight-blocked", "message": "Critical opener uses waitForTimeout, unscoped nth, and force click." }
+    ],
+    "locatorDiagnostics": [
+      { "stepId": "s001", "source": "generated", "locator": "page.getByRole(\"button\", { name: \"新建\" }).nth(0)", "strategy": "global-role-ordinal", "pageCount": 4, "risk": "high" },
+      { "stepId": "s001", "source": "recorded", "locator": "lan-device-section >> plus 新建", "strategy": "section-scoped-role", "risk": "low" }
+    ],
+    "stateTransitions": [
+      { "stepId": "s001", "expectedEffect": "opens-dialog", "after": { "openedDialog": { "title": "新建LAN定义" } }, "risk": "high" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "high",
+    "issueKinds": ["weak-locator"],
+    "rootCauseStepIds": ["s001"],
+    "affectedStepIds": ["s001"],
+    "requiredPatchOps": ["replace-locator-scope"],
+    "requiredKeywords": ["LAN定义", "section", "lan-device-section"],
+    "forbiddenKeywords": ["waitForTimeout", "nth(0)", "force"],
+    "noIssueExpected": false
+  }
+}

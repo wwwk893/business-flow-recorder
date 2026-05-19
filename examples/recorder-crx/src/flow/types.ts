@@ -198,6 +198,16 @@ export interface FlowStep {
   networkRefs?: string[];
   rawAction?: unknown;
   sourceCode?: string;
+  artifacts?: {
+    aiAssist?: {
+      forceEmit?: boolean;
+      needsHumanReview?: boolean;
+      reviewIssues?: string[];
+      locatorContractHint?: unknown;
+      lastPatchId?: string;
+      lastPatchReason?: string;
+    };
+  };
 }
 
 export interface FlowRepeatParameter {

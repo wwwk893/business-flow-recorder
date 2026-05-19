@@ -5,6 +5,7 @@
  * you may not use this file except in compliance with the License.
  */
 import { buildAiIntentInput } from '../aiIntent/prompt';
+import { aiAssistTests } from '../aiAssist/__tests__/aiAssistTests';
 import { collectOverlayPredictionCandidates, createOverlayPrediction, expectedOverlayKindForTrigger, newOverlayPredictionCandidates, overlayPredictionSignatureCounts, type OverlayPredictionCandidate } from '../capture/overlayPrediction';
 import { extractTargetFromRecorderAction } from '../capture/targetFromRecorderSelector';
 import { equivalentAnchorCandidates, rankAnchorCandidates } from '../uiSemantics/anchorDiagnostics';
@@ -14573,6 +14574,8 @@ test('demo', async ({ page }) => {
     },
   },
 ];
+
+tests.push(...aiAssistTests);
 
 runStepStabilityTests().catch(error => {
   setTimeout(() => { throw error; }, 0);

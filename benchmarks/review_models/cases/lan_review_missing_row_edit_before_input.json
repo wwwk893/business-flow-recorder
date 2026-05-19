@@ -1,0 +1,42 @@
+{
+  "name": "lan_review_missing_row_edit_before_input",
+  "title": "LAN edit row step skipped before LAN IP input",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-lan",
+    "steps": [
+      { "id": "s001", "order": 1, "action": "click", "target": { "testId": "lan-device-section", "text": "新建" }, "context": { "after": { "openedDialog": { "title": "新建LAN定义", "type": "modal", "visible": true } } } },
+      { "id": "s006", "order": 2, "action": "click", "target": { "text": "确定" }, "context": { "before": { "dialog": { "title": "新建LAN定义", "type": "modal", "visible": true } } } },
+      { "id": "s007", "order": 3, "action": "click", "target": { "text": "LAN1 DHCP类型：关闭添加描述", "scope": { "table": { "testId": "lan-device-table", "rowKey": "LAN1", "rowText": "LAN1 DHCP类型：关闭 添加描述" } } }, "uiRecipe": { "kind": "table-row-action", "operation": "rowAction", "rowKey": "LAN1" }, "context": { "before": { "table": { "testId": "lan-device-table", "rowKey": "LAN1" } }, "after": { "openedDialog": { "title": "编辑LAN1", "type": "modal", "visible": true } } } },
+      { "id": "s009", "order": 4, "action": "fill", "target": { "placeholder": "例如：192.168.1.1/24" }, "context": { "before": { "dialog": { "title": "编辑LAN1", "type": "modal", "visible": true }, "form": { "label": "LAN IP" }, "target": { "placeholder": "例如：192.168.1.1/24", "uniqueness": { "pageCount": 2 } } } } }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "// s007 has no runnable Playwright action source.\n// s009 填写\nawait page.getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "parserSafeCode": "// s007 has no runnable Playwright action source.\n// s009 填写\nawait page.getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "emittedCodeMap": {
+        "s007": { "stepId": "s007", "emitted": false, "skipReason": "no-runnable-source" },
+        "s009": { "stepId": "s009", "emitted": true, "parserSafeCode": "await page.getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");", "risks": ["global-placeholder"] }
+      }
+    },
+    "reviewSignals": [
+      { "stepId": "s007", "severity": "critical", "kind": "not-emitted", "message": "s007 未生成可执行代码，但后续步骤依赖它打开的弹窗。", "relatedStepIds": ["s009"] },
+      { "stepId": "s007", "severity": "critical", "kind": "downstream-state-dependency", "message": "s009 依赖 s007 打开的 编辑LAN1。", "relatedStepIds": ["s009"] },
+      { "stepId": "s009", "severity": "high", "kind": "global-placeholder", "message": "s009 使用全局 placeholder，但存在 编辑LAN1 dialog/form scope。" }
+    ],
+    "locatorDiagnostics": [],
+    "stateTransitions": [
+      { "stepId": "s007", "expectedEffect": "opens-dialog", "after": { "openedDialog": { "title": "编辑LAN1" } }, "requiredByLaterStepIds": ["s009"], "risk": "high" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "high",
+    "issueKinds": ["propagated-failure-risk"],
+    "rootCauseStepIds": ["s007"],
+    "affectedStepIds": ["s009"],
+    "requiredPatchOps": ["force-emit-step", "replace-locator-scope"],
+    "requiredKeywords": ["s007", "s009", "编辑LAN1", "root cause"],
+    "forbiddenKeywords": ["only fix s009", "waitForTimeout", "getByPlaceholder().nth"],
+    "noIssueExpected": false
+  }
+}

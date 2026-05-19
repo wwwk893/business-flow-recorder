@@ -32,6 +32,7 @@ import { FlowMetaPanel } from './components/FlowMetaPanel';
 import { AiIntentSettingsPanel } from './components/AiIntentSettingsPanel';
 import { AiUsagePanel } from './components/AiUsagePanel';
 import { FlowAiIntentControl, type FlowAiIntentOverride } from './components/FlowAiIntentControl';
+import type { AiAssistRepairState, AiAssistReviewState } from './components/AiAssistReviewCard';
 import { FlowSelectionGuard } from './components/FlowSelectionGuard';
 import { RecordingFlowContextBar } from './components/RecordingFlowContextBar';
 import { AssertionWorkbench } from './components/AssertionWorkbench';
@@ -43,6 +44,7 @@ import { createDeepSeekV4FlashProfile, normalizeAiIntentSettings, normalizeProfi
 import { clearAiUsageRecords, loadAiApiKey, loadAiIntentSettings, loadAiProviderProfiles, loadAiUsageRecords, saveAiApiKey, saveAiIntentSettings, saveAiProviderProfiles, withApiKeyPreview } from './aiIntent/storage';
 import { usageRecordsToJsonl } from './aiIntent/usage';
 import type { AiIntentSettings, AiProviderProfile, AiUsageRecord } from './aiIntent/types';
+import { applyRecordingReviewPatch, createAiAssistProvider, defaultAiAssistProviderConfig, normalizeAiAssistProviderConfig, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
 import { countBusinessFlowPlaybackActions, generateBusinessFlowPlaybackCode, generateBusinessFlowPlaywrightCode } from './flow/codePreview';
 import { appendSyntheticPageContextStepsWithResult, clearFlowRecordingHistory, createAssertion, deleteStepFromFlow, insertEmptyStepAfter, insertWaitStepAfter, mergeActionsIntoFlow, nextAssertionId, normalizeFlowStepIds, type MergeDiagnosticEvent } from './flow/flowBuilder';
 import { mergePageContextIntoFlow, normalizeIntentSources } from './flow/flowContextMerger';
@@ -369,6 +371,13 @@ function runtimeLogsToJsonl(logs: RecorderDiagnosticLog[]) {
   return diagnosticLogsToJsonl(logs.filter(log => log.type.startsWith('runtime.')));
 }
 
+function extractStepIdFromDiagnostic(log?: RecorderDiagnosticLog) {
+  if (!log)
+    return undefined;
+  const text = `${log.message}\n${JSON.stringify(log.data ?? {})}`;
+  return text.match(/\b(s\d{3,}|step-\d+)\b/)?.[1];
+}
+
 function isRuntimeLogExpanded(entry: RecorderDiagnosticLog, expandedIds: Set<number>) {
   return expandedIds.has(entry.id);
 }
@@ -504,6 +513,8 @@ export const CrxRecorder: React.FC = ({
   const [aiStatus, setAiStatus] = React.useState('');
   const [aiGenerating, setAiGenerating] = React.useState(false);
   const [aiPendingStepIds, setAiPendingStepIds] = React.useState<Set<string>>(() => new Set());
+  const [aiAssistReview, setAiAssistReview] = React.useState<AiAssistReviewState>({ status: 'idle' });
+  const [aiAssistRepair, setAiAssistRepair] = React.useState<AiAssistRepairState>({ status: 'idle' });
   const [diagnosticLogs, setDiagnosticLogs] = React.useState<RecorderDiagnosticLog[]>(() => loadPersistedDiagnosticLogs());
   const [unsavedFlowPromptOpen, setUnsavedFlowPromptOpen] = React.useState(false);
   const [savingBeforeLeave, setSavingBeforeLeave] = React.useState(false);
@@ -520,6 +531,9 @@ export const CrxRecorder: React.FC = ({
   const pageContextCaptureStartedAtRef = React.useRef<number>();
   const syntheticFlushTimerRef = React.useRef<number>();
   const businessFlowPlaybackCodeRef = React.useRef('');
+  const aiAssistLastReviewPatchRef = React.useRef<RecordingReviewPatch>();
+  const aiAssistLastReviewValidationRef = React.useRef<RecordingReviewValidationResult>();
+  const aiAssistRepairRollbackRef = React.useRef<BusinessFlow>();
   const businessFlowEnabledRef = React.useRef(defaultSettings.businessFlowEnabled !== false);
   const pageContextCaptureActiveRef = React.useRef(false);
   const finalizingRecordingSessionRef = React.useRef(false);
@@ -1184,6 +1198,7 @@ export const CrxRecorder: React.FC = ({
   }, [activeAiApiKey, activeAiProfile, flowAiIntentConfiguredEnabled]);
   const businessFlowCode = React.useMemo(() => generateBusinessFlowPlaywrightCode(flowDraft), [flowDraft]);
   const businessFlowPlaybackCode = React.useMemo(() => generateBusinessFlowPlaybackCode(flowDraft), [flowDraft]);
+  const aiAssistConfig = React.useMemo(() => normalizeAiAssistProviderConfig(defaultAiAssistProviderConfig), []);
   const generatedBusinessSources = React.useMemo(() => businessFlowSources(sources, businessFlowCode), [businessFlowCode, sources]);
   const generatedBusinessPlaybackSources = React.useMemo(() => businessFlowSources(sources, businessFlowPlaybackCode), [businessFlowPlaybackCode, sources]);
   const currentCodeText = settings.businessFlowEnabled === false ? source?.text : panelStage === 'replay' ? businessFlowPlaybackCode : businessFlowCode;
@@ -1383,6 +1398,114 @@ export const CrxRecorder: React.FC = ({
     setPanelStage(finalizedFlow.steps.length ? 'review' : 'recording');
     setActiveTab('business');
   }, [finalizeCurrentRecordingSession]);
+
+  const runAiAssistReview = React.useCallback(async (reviewMode: 'stop-recording' | 'manual-review' | 'pre-export' = 'manual-review') => {
+    setAiAssistReview({ status: 'running', message: 'AI 正在审查规则生成回放代码...' });
+    const flow = flowDraftRef.current;
+    const provider = createAiAssistProvider(aiAssistConfig);
+    const result = await reviewRecordingWithAiAssist({
+      flow,
+      provider,
+      config: aiAssistConfig,
+      contextOptions: { reviewMode },
+    });
+    if (result.patch)
+      aiAssistLastReviewPatchRef.current = result.patch;
+    if (result.validation)
+      aiAssistLastReviewValidationRef.current = result.validation;
+    if (result.validation?.autoApply && result.validation.appliedFlow) {
+      const applied = result.validation.appliedFlow as BusinessFlow;
+      flowDraftRef.current = applied;
+      setFlowDraft(applied);
+    }
+    setAiAssistReview({
+      status: result.error ? 'error' : 'ready',
+      message: result.error || (result.validation?.autoApply ? 'AI 已自动应用低风险 patch。' : 'AI Review 已完成。'),
+      patch: result.patch,
+      validation: result.validation,
+      requestId: result.requestId,
+    });
+    appendDiagnosticLog({
+      type: result.error ? 'ai-assist.review.failed' : 'ai-assist.review.completed',
+      level: result.error ? 'warn' : undefined,
+      message: result.error ? 'AI Review 失败' : 'AI Review 完成',
+      data: {
+        requestId: result.requestId,
+        error: result.error,
+        issueCount: result.patch?.issues.length,
+        validationOk: result.validation?.ok,
+        autoApply: result.validation?.autoApply,
+      },
+    });
+  }, [aiAssistConfig, appendDiagnosticLog]);
+
+  const applyAiAssistReviewPatch = React.useCallback(() => {
+    const patch = aiAssistLastReviewPatchRef.current;
+    const validation = aiAssistLastReviewValidationRef.current;
+    if (!patch || !validation?.ok) {
+      setAiAssistReview(review => ({ ...review, status: 'error', message: '没有可应用且已通过校验的 AI Review patch。' }));
+      return;
+    }
+    const nextFlow = validation.appliedFlow as BusinessFlow || applyRecordingReviewPatch(flowDraftRef.current, patch);
+    flowDraftRef.current = nextFlow;
+    setFlowDraft(nextFlow);
+    setAiAssistReview(review => ({ ...review, status: 'ready', message: 'AI Review patch 已应用。' }));
+  }, []);
+
+  const runAiAssistRepairAndRetry = React.useCallback(async () => {
+    const flow = flowDraftRef.current;
+    const latestFailure = [...diagnosticLogs].reverse().find(log => log.level === 'warn' || /failed|error|timeout|runtime/i.test(log.type));
+    const fallbackStep = flow.steps[flow.steps.length - 1];
+    const symptomStepId = extractStepIdFromDiagnostic(latestFailure) || fallbackStep?.id || '';
+    setAiAssistRepair({ status: 'running', message: 'AI 正在分析回放失败并生成结构化 patch...' });
+    aiAssistRepairRollbackRef.current = flow;
+    const provider = createAiAssistProvider(aiAssistConfig);
+    const result = await repairReplayFailureWithAiAssist({
+      flow,
+      provider,
+      config: aiAssistConfig,
+      failure: {
+        symptomStepId,
+        errorType: latestFailure?.type,
+        errorText: latestFailure ? `${latestFailure.message}\n${JSON.stringify(latestFailure.data ?? {})}` : 'No runtime failure log was available; run replay first.',
+      },
+    });
+    if (result.validation?.ok && result.validation.appliedFlow) {
+      const applied = result.validation.appliedFlow;
+      flowDraftRef.current = applied;
+      setFlowDraft(applied);
+      const playbackCode = generateBusinessFlowPlaybackCode(applied);
+      window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
+      setPanelStage('replay');
+      setActiveTab('code');
+    }
+    setAiAssistRepair({
+      status: result.error ? 'error' : 'ready',
+      message: result.error || (result.validation?.ok ? 'AI Repair patch 已校验并写入临时 flow，已触发重试代码刷新。' : result.validation?.errors.join('；') || 'AI Repair 未通过校验。'),
+      validation: result.validation,
+      requestId: result.requestId,
+    });
+    appendDiagnosticLog({
+      type: result.error ? 'ai-assist.repair.failed' : 'ai-assist.repair.completed',
+      level: result.error || !result.validation?.ok ? 'warn' : undefined,
+      message: result.error ? 'AI Repair 失败' : 'AI Repair 完成',
+      data: {
+        requestId: result.requestId,
+        error: result.error,
+        validationOk: result.validation?.ok,
+        rootCauseStepId: result.validation?.rootCauseStepId,
+      },
+    });
+  }, [aiAssistConfig, appendDiagnosticLog, diagnosticLogs]);
+
+  const rollbackAiAssistRepair = React.useCallback(() => {
+    const rollbackFlow = aiAssistRepairRollbackRef.current;
+    if (!rollbackFlow)
+      return;
+    flowDraftRef.current = rollbackFlow;
+    setFlowDraft(rollbackFlow);
+    setAiAssistRepair({ status: 'idle', message: '已回滚 AI Repair 临时修改。' });
+  }, []);
 
   React.useEffect(() => {
     if (!hasUnsavedFlowChanges)
@@ -1978,13 +2101,15 @@ export const CrxRecorder: React.FC = ({
       },
     });
     await finalizeCurrentRecordingSession('stop-recording');
+    if (aiAssistConfig.reviewOnStopRecording)
+      runAiAssistReview('stop-recording').catch(() => {});
     setPageContextCaptureActive(false);
     pendingInsertRecordingRef.current = undefined;
     setInsertRecordingAfterStepId(undefined);
     setPanelStage('recording');
     setActiveTab('business');
     window.dispatch({ event: 'setMode', params: { mode: 'standby' } }).catch(() => {});
-  }, [appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, setPageContextCaptureActive]);
+  }, [aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, setPageContextCaptureActive]);
 
   const continueRecording = React.useCallback(() => {
     if (!hasRecordingFlowContext(flowDraft)) {
@@ -2532,6 +2657,12 @@ export const CrxRecorder: React.FC = ({
                   onOpenSettings={() => setPanelStage('aiSettings')}
                   onSaveRepeatSegment={saveRepeatSegment}
                   onDeleteRepeatSegment={removeRepeatSegment}
+                  aiAssistReview={aiAssistReview}
+                  aiAssistRepair={aiAssistRepair}
+                  onRunAiReview={() => runAiAssistReview('manual-review')}
+                  onApplyAiReviewPatch={applyAiAssistReviewPatch}
+                  onAiRepairAndRetry={runAiAssistRepairAndRetry}
+                  onRollbackAiRepair={rollbackAiAssistRepair}
                   showStepToolbar={false}
                 />}
               </> : <FlowSelectionGuard
@@ -2568,6 +2699,12 @@ export const CrxRecorder: React.FC = ({
                 onOpenSettings={() => setPanelStage('aiSettings')}
                 onSaveRepeatSegment={saveRepeatSegment}
                 onDeleteRepeatSegment={removeRepeatSegment}
+                aiAssistReview={aiAssistReview}
+                aiAssistRepair={aiAssistRepair}
+                onRunAiReview={() => runAiAssistReview('manual-review')}
+                onApplyAiReviewPatch={applyAiAssistReviewPatch}
+                onAiRepairAndRetry={runAiAssistRepairAndRetry}
+                onRollbackAiRepair={rollbackAiAssistRepair}
               />}
               {activeTab === 'code' && <div className='embedded-recorder'>
                 {settings.experimental && <div className='code-actions'>

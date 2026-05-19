@@ -1,0 +1,33 @@
+{
+  "name": "lan_review_good_flow_no_issue",
+  "title": "Good LAN flow with scoped edit and input",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-lan-good",
+    "steps": [
+      { "id": "s007", "order": 1, "action": "click", "target": { "scope": { "table": { "testId": "lan-device-table", "rowKey": "LAN1" } } }, "context": { "after": { "openedDialog": { "title": "编辑LAN1", "type": "modal", "visible": true } } } },
+      { "id": "s009", "order": 2, "action": "fill", "context": { "before": { "dialog": { "title": "编辑LAN1", "visible": true }, "form": { "label": "LAN IP" } } } }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.getByTestId(\"lan-device-table\").locator(\"[data-row-key=\\\"LAN1\\\"]\").getByRole(\"button\", { name: \"编辑\" }).click();\nawait page.locator(\".ant-modal:visible\").filter({ hasText: \"编辑LAN1\" }).locator(\".ant-form-item\").filter({ hasText: \"LAN IP\" }).getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "parserSafeCode": "await page.getByTestId(\"lan-device-table\").locator(\"[data-row-key=\\\"LAN1\\\"]\").getByRole(\"button\", { name: \"编辑\" }).click();\nawait page.locator(\".ant-modal:visible\").filter({ hasText: \"编辑LAN1\" }).locator(\".ant-form-item\").filter({ hasText: \"LAN IP\" }).getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "emittedCodeMap": { "s007": { "emitted": true }, "s009": { "emitted": true } }
+    },
+    "reviewSignals": [],
+    "locatorDiagnostics": [],
+    "stateTransitions": [
+      { "stepId": "s007", "expectedEffect": "opens-dialog", "requiredByLaterStepIds": ["s009"], "risk": "low" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "low",
+    "issueKinds": ["false-positive-none"],
+    "rootCauseStepIds": [],
+    "affectedStepIds": [],
+    "requiredPatchOps": [],
+    "requiredKeywords": ["no issue"],
+    "forbiddenKeywords": ["high", "critical", "force-emit-step", "replace-locator-scope"],
+    "noIssueExpected": true
+  }
+}

@@ -20,6 +20,7 @@ import type { BusinessFlow, FlowRepeatSegment } from '../flow/types';
 import { ExportReviewPanel } from './ExportReviewPanel';
 import { RepeatSegmentEditor } from './RepeatSegmentEditor';
 import { ScrollJumpDock } from './ScrollJumpDock';
+import { AiAssistReviewCard, type AiAssistRepairState, type AiAssistReviewState } from './AiAssistReviewCard';
 
 export const FlowReviewPanel: React.FC<{
   mode: 'steps' | 'export';
@@ -41,8 +42,14 @@ export const FlowReviewPanel: React.FC<{
   onOpenSettings: () => void;
   onSaveRepeatSegment: (segment: FlowRepeatSegment) => void;
   onDeleteRepeatSegment: (segmentId: string) => void;
+  aiAssistReview?: AiAssistReviewState;
+  aiAssistRepair?: AiAssistRepairState;
+  onRunAiReview?: () => void;
+  onApplyAiReviewPatch?: () => void;
+  onAiRepairAndRetry?: () => void;
+  onRollbackAiRepair?: () => void;
   showStepToolbar?: boolean;
-}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, showStepToolbar = true }) => {
+}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, aiAssistReview, aiAssistRepair, onRunAiReview, onApplyAiReviewPatch, onAiRepairAndRetry, onRollbackAiRepair, showStepToolbar = true }) => {
   const stats = flowStats(flow);
   const repeatStats = repeatSegmentStats(flow);
   const [activeInsertStepId, setActiveInsertStepId] = React.useState<string>();
@@ -141,6 +148,14 @@ export const FlowReviewPanel: React.FC<{
       onContinueRecording={onContinueRecording}
       onAddAssertion={onAddAssertion}
       onOpenSettings={onOpenSettings}
+    />}
+    {mode === 'export' && aiAssistReview && aiAssistRepair && onRunAiReview && onApplyAiReviewPatch && onAiRepairAndRetry && onRollbackAiRepair && <AiAssistReviewCard
+      review={aiAssistReview}
+      repair={aiAssistRepair}
+      onRunReview={onRunAiReview}
+      onApplyReviewPatch={onApplyAiReviewPatch}
+      onRepairAndRetry={onAiRepairAndRetry}
+      onRollbackRepair={onRollbackAiRepair}
     />}
     {mode === 'steps' && <>
       <div className='review-summary-grid'>

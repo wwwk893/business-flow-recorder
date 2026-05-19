@@ -1,0 +1,33 @@
+{
+  "name": "lan_review_global_placeholder_without_dialog_scope",
+  "title": "LAN current-step placeholder strict-mode risk",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-lan-placeholder",
+    "steps": [
+      { "id": "s007", "order": 1, "action": "click", "context": { "after": { "openedDialog": { "title": "编辑LAN1", "type": "modal", "visible": true } } } },
+      { "id": "s009", "order": 2, "action": "fill", "target": { "placeholder": "例如：192.168.1.1/24" }, "context": { "before": { "dialog": { "title": "编辑LAN1", "visible": true }, "form": { "label": "LAN IP" }, "target": { "placeholder": "例如：192.168.1.1/24", "uniqueness": { "pageCount": 2 } } } } }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "parserSafeCode": "await page.getByPlaceholder(\"例如：192.168.1.1/24\").fill(\"192.168.1.1/24\");",
+      "emittedCodeMap": { "s007": { "emitted": true }, "s009": { "emitted": true, "risks": ["global-placeholder"] } }
+    },
+    "reviewSignals": [
+      { "stepId": "s009", "severity": "high", "kind": "global-placeholder", "message": "全局 placeholder 在页面中重复，应 scope 到 编辑LAN1 / LAN IP。" }
+    ],
+    "locatorDiagnostics": [],
+    "stateTransitions": []
+  },
+  "expected": {
+    "overallRisk": "high",
+    "issueKinds": ["unscoped-dialog-field"],
+    "rootCauseStepIds": ["s009"],
+    "affectedStepIds": ["s009"],
+    "requiredPatchOps": ["replace-locator-scope"],
+    "requiredKeywords": ["编辑LAN1", "LAN IP", "placeholder"],
+    "forbiddenKeywords": ["s007 root cause", "force-emit-step", "waitForTimeout"],
+    "noIssueExpected": false
+  }
+}

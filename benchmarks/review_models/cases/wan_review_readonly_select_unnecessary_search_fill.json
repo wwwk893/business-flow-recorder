@@ -1,0 +1,66 @@
+{
+  "name": "wan_review_readonly_select_unnecessary_search_fill",
+  "title": "Readonly AntD Select should not be reviewed as searchable fill",
+  "task_type": "recording_review",
+  "reviewContext": {
+    "schema": "recording-review-context/v1",
+    "flowId": "flow-wan-readonly-select",
+    "steps": [
+      {
+        "id": "s003",
+        "order": 1,
+        "action": "click",
+        "target": { "testId": "wan-controller-port-select", "controlType": "select" },
+        "context": {
+          "before": {
+            "dialog": { "title": "新建控制器连接", "type": "modal", "visible": true },
+            "form": { "label": "WAN口" },
+            "target": { "testId": "wan-controller-port-select", "controlType": "select", "role": "combobox" }
+          },
+          "after": { "target": { "controlType": "select", "name": "WAN1" } }
+        }
+      },
+      {
+        "id": "s004",
+        "order": 2,
+        "action": "click",
+        "target": { "text": "WAN1", "controlType": "select-option" },
+        "uiRecipe": { "kind": "select-option", "operation": "selectOption", "displayText": "WAN1", "runtimeFallback": "active-antd-popup-option" },
+        "context": {
+          "before": {
+            "dialog": { "title": "新建控制器连接", "type": "modal", "visible": true },
+            "form": { "label": "WAN口" },
+            "target": { "controlType": "select-option", "text": "WAN1" }
+          }
+        }
+      }
+    ],
+    "generatedArtifacts": {
+      "exportedCode": "await page.locator(\".ant-form-item\").filter({ hasText: \"WAN口\" }).locator(\".ant-select-selector\").locator(\"input:visible\").fill(\"WAN1\");",
+      "parserSafeCode": "await page.locator(\".ant-form-item\").filter({ hasText: \"WAN口\" }).locator(\".ant-select-selector\").locator(\"input:visible\").fill(\"WAN1\");",
+      "emittedCodeMap": {
+        "s003": { "stepId": "s003", "emitted": true, "parserSafeCode": "await page.locator(\".ant-form-item\").filter({ hasText: \"WAN口\" }).locator(\".ant-select-selector\").locator(\"input:visible\").fill(\"WAN1\");", "risks": ["readonly-select-fill-risk"] },
+        "s004": { "stepId": "s004", "emitted": false, "skipReason": "option merged into unsafe search fill" }
+      }
+    },
+    "reviewSignals": [
+      { "stepId": "s003", "severity": "high", "kind": "readonly-select-fill-risk", "message": "Readonly AntD Select search input is not editable; option should be selected through active popup option bridge.", "relatedStepIds": ["s004"] },
+      { "stepId": "s004", "severity": "high", "kind": "select-trigger-option-mismatch", "message": "Option WAN1 is not emitted as a trigger-owned select option.", "relatedStepIds": ["s003"] }
+    ],
+    "locatorDiagnostics": [],
+    "stateTransitions": [
+      { "stepId": "s003", "expectedEffect": "opens-dropdown", "requiredByLaterStepIds": ["s004"], "risk": "high" },
+      { "stepId": "s004", "expectedEffect": "selects-option", "risk": "high" }
+    ]
+  },
+  "expected": {
+    "overallRisk": "high",
+    "issueKinds": ["select-trigger-option-risk"],
+    "rootCauseStepIds": ["s003"],
+    "affectedStepIds": ["s004"],
+    "requiredPatchOps": ["replace-recipe"],
+    "requiredKeywords": ["readonly", "WAN口", "WAN1", "active popup"],
+    "forbiddenKeywords": ["fill search input", "waitForTimeout", "global option text"],
+    "noIssueExpected": false
+  }
+}
