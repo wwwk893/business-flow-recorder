@@ -15,9 +15,11 @@
  */
 import React from 'react';
 import { GlobalAiIntentCard } from './GlobalAiIntentCard';
+import { GlobalAiAssistCard } from './GlobalAiAssistCard';
 import type { AiIntentSettings, AiProviderProfile, AiUsageRecord } from '../aiIntent/types';
 import { flowStats } from '../flow/display';
 import type { BusinessFlow } from '../flow/types';
+import type { CrxSettings } from '../settings';
 
 type FlowLibraryFilter = 'all' | 'draft' | 'done' | 'high';
 
@@ -34,6 +36,7 @@ export const FlowLibraryPanel: React.FC<{
   onImportJson: (file: File) => void;
   onExportAll: () => void;
   aiSettings: AiIntentSettings;
+  crxSettings: CrxSettings;
   aiProfiles: AiProviderProfile[];
   activeAiProfile?: AiProviderProfile;
   aiUsageRecords: AiUsageRecord[];
@@ -53,6 +56,7 @@ export const FlowLibraryPanel: React.FC<{
   onImportJson,
   onExportAll,
   aiSettings,
+  crxSettings,
   aiProfiles,
   activeAiProfile,
   aiUsageRecords,
@@ -148,6 +152,11 @@ export const FlowLibraryPanel: React.FC<{
         onSettingsChange={onAiSettingsChange}
         onOpenSettings={onOpenAiSettings}
         onOpenUsage={onOpenAiUsage}
+      />
+      <GlobalAiAssistCard
+        settings={crxSettings}
+        activeProfile={activeAiProfile}
+        onOpenSettings={onOpenAiSettings}
       />
     </div>
 

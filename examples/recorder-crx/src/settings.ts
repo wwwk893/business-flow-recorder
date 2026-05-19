@@ -57,7 +57,7 @@ export const defaultSettings: CrxSettings = {
   aiAssistProviderKind: 'private-http',
   aiAssistAllowCloudProvider: false,
   aiAssistMaxContextChars: 28_000,
-  aiAssistTimeoutMs: 20_000,
+  aiAssistTimeoutMs: 60_000,
   aiAssistRetryLimit: 0,
 };
 

@@ -31,6 +31,11 @@ export const AiAssistReviewCard: React.FC<{
   showRepairButton?: boolean;
 }> = ({ review, repair, onRunReview, onApplyReviewPatch, onRepairAndRetry, onRollbackRepair, showRepairButton = true }) => {
   const issueCount = review.patch?.issues.length ?? 0;
+  const reviewApplyHint = review.validation?.autoApply
+    ? '低风险 patch 已自动应用。'
+    : review.validation?.ok
+      ? '已通过静态/渲染校验，需人工确认后应用。'
+      : review.validation?.errors.join('；') || '等待验证';
   return <section className='ai-assist-card' aria-label='AI Review 与 AI Repair'>
     <div className='section-title'>
       <strong>AI Review / Repair</strong>
@@ -49,9 +54,9 @@ export const AiAssistReviewCard: React.FC<{
         <span className={`risk ${riskClass(review.patch.diagnosis.overallRisk)}`}>{review.patch.diagnosis.overallRisk.toUpperCase()}</span>
         <div>
           <strong>{review.patch.issues[0].issueKind}: {review.patch.issues[0].rootCauseStepId}</strong>
-          <span>{review.patch.issues[0].reason}</span>
+          <span>{review.patch.issues[0].reason} {reviewApplyHint}</span>
         </div>
-        <button type='button' className='mini-button' disabled={!review.validation?.ok || !review.validation?.autoApply} onClick={onApplyReviewPatch}>应用并验证</button>
+        <button type='button' className='mini-button' disabled={!review.validation?.ok || review.status === 'running'} onClick={onApplyReviewPatch}>{review.validation?.autoApply ? '已自动应用' : '确认应用'}</button>
       </div>}
       {showRepairButton && <div className='review-card'>
         <span className={`risk ${repair.status === 'error' ? 'p1' : repair.status === 'ready' ? 'ok' : 'p1'}`}>{repair.status}</span>

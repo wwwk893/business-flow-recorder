@@ -9,6 +9,7 @@ import { buildReplayRepairContext } from './repairContextBuilder';
 import { parseReplayRepairPatch } from './repairPatchParser';
 import { buildReplayRepairPrompt } from './repairPrompt';
 import { validateReplayRepairPatch } from './repairValidator';
+import type { RecordingReviewContext, RecordingReviewPatch } from '../review/types';
 import type { ReplayRepairFailure, ReplayRepairPatch, ReplayRepairContext, ReplayRepairValidationResult } from './types';
 
 export interface ReplayRepairServiceResult {
@@ -26,9 +27,16 @@ export async function repairReplayFailureWithAiAssist(args: {
   failure: ReplayRepairFailure;
   provider: AiAssistProvider;
   config: AiAssistProviderConfig;
+  previousReviewContext?: RecordingReviewContext;
+  previousReviewPatch?: RecordingReviewPatch;
   signal?: AbortSignal;
 }): Promise<ReplayRepairServiceResult> {
-  const context = buildReplayRepairContext({ flow: args.flow, failure: args.failure });
+  const context = buildReplayRepairContext({
+    flow: args.flow,
+    failure: args.failure,
+    previousReviewContext: args.previousReviewContext,
+    previousReviewPatch: args.previousReviewPatch,
+  });
   const prompt = buildReplayRepairPrompt(context, args.config.maxContextChars);
   try {
     const response = await args.provider.repairReplayFailure({ context, prompt, signal: args.signal });

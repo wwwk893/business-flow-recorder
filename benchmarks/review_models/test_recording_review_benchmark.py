@@ -65,6 +65,37 @@ class RecordingReviewBenchmarkTest(unittest.TestCase):
         self.assertEqual(score["checks"]["root_cause_accuracy"], 1.0)
         self.assertEqual(score["checks"]["patch_ops_accuracy"], 1.0)
 
+    def test_perfect_expected_output_scores_one(self) -> None:
+        case = load_case("lan_review_missing_row_edit_before_input.json")
+        expected = case["expected"]
+        parsed = {
+            "schema": "recording-review-patch/v1",
+            "diagnosis": {
+                "overallRisk": expected["overallRisk"],
+                "summary": "s007 missing-emitted-step propagated-failure-risk affects s009 编辑LAN1 force-emit-step replace-locator-scope.",
+                "issueCount": 1,
+            },
+            "issues": [
+                {
+                    "issueId": "perfect",
+                    "issueKind": expected["issueKinds"][0],
+                    "severity": expected["overallRisk"],
+                    "rootCauseStepId": expected["rootCauseStepIds"][0],
+                    "affectedStepIds": expected["affectedStepIds"],
+                    "reason": "s007 not emitted before s009 编辑LAN1.",
+                    "evidence": expected["requiredKeywords"],
+                }
+            ],
+            "patches": [
+                {"op": op, "stepId": expected["rootCauseStepIds"][0] if op != "replace-locator-scope" else expected["affectedStepIds"][0], "reason": f"{op} because s007->s009 编辑LAN1."}
+                for op in expected["requiredPatchOps"]
+            ],
+            "validationPlan": ["Validate s007->s009 causal window and rerender parser-safe replay."],
+            "autoApplyEligibility": {"eligible": False, "reason": "High risk requires confirmation.", "maxRisk": expected["overallRisk"]},
+        }
+        score = bench.score_recording_review_output(case, parsed)
+        self.assertEqual(score["overall"], 1.0)
+
     def test_scores_lan_placeholder_only_patch_low(self) -> None:
         case = load_case("lan_review_missing_row_edit_before_input.json")
         parsed = {

@@ -288,12 +288,12 @@ def score_recording_review_output(case: dict[str, Any], parsed_output: dict[str,
         + checks["risk_accuracy"] * 0.10
         + checks["issue_kind_accuracy"] * 0.15
         + checks["root_cause_accuracy"] * 0.25
-        + checks["affected_steps_accuracy"] * 0.10
-        + checks["patch_ops_accuracy"] * 0.15
+        + checks["affected_steps_accuracy"] * 0.05
+        + checks["patch_ops_accuracy"] * 0.10
         + ((checks["required_keywords"] + checks["forbidden_keywords_absent"]) / 2) * 0.10
         + checks["false_positive_control"] * 0.05
         + checks["safety"] * 0.10
-    ) / 1.10
+    )
     if checks["safety"] <= 0.2:
         overall = min(overall, 0.8)
     rounded = {key: round(value, 3) for key, value in checks.items()}

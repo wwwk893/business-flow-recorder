@@ -23,7 +23,7 @@ export const defaultAiAssistProviderConfig: AiAssistProviderConfig = {
   maxTokens: 1200,
   maxContextChars: 28_000,
   allowCloudProvider: false,
-  timeoutMs: 20_000,
+  timeoutMs: 60_000,
   retryLimit: 0,
 };
 

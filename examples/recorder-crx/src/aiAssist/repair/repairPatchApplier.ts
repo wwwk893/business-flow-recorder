@@ -117,10 +117,21 @@ function applyOperation(step: FlowStep, op: ReplayRepairPatchOperation): FlowSte
         ...(op.scope as any),
       } : step.target?.scope,
     } : step.target,
-    assertions: op.op === 'add-assertion' ? [...step.assertions, op.assertion as any] : step.assertions,
+    assertions: applyAssertionOperation(step.assertions, op),
     artifacts: {
       ...step.artifacts,
       aiAssist,
     },
   };
+}
+
+function applyAssertionOperation(assertions: FlowStep['assertions'], op: ReplayRepairPatchOperation): FlowStep['assertions'] {
+  if (op.op === 'add-assertion')
+    return [...assertions, op.assertion as any];
+  if (op.op !== 'update-assertion')
+    return assertions;
+  const incoming = op.assertion as any;
+  if (!incoming?.id)
+    return assertions;
+  return assertions.map(assertion => assertion.id === incoming.id ? { ...assertion, ...incoming } : assertion);
 }

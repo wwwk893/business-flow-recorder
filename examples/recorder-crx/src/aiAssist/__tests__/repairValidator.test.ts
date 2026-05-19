@@ -47,4 +47,26 @@ export const repairValidatorTests: AiAssistTestCase[] = [{
     assert(step?.artifacts?.aiAssist?.forceEmit, 'unskip-step should still apply when replace-recipe targets same step');
     assert(step?.uiRecipe?.kind === 'table-row-action', 'replace-recipe should also apply on same step');
   },
+}, {
+  name: 'AI Repair applier updates existing assertions by id',
+  run: () => {
+    const flow = {
+      ...createLanPropagatedFlow(),
+      steps: createLanPropagatedFlow().steps.map(step => step.id === 's009' ? {
+        ...step,
+        assertions: [{
+          id: 'a001',
+          type: 'visible' as const,
+          enabled: true,
+          expected: 'old',
+        }],
+      } : step),
+    };
+    const applied = applyReplayRepairPatch(flow, {
+      ...correctLanRepairPatch(),
+      patches: [{ op: 'update-assertion', stepId: 's009', assertion: { id: 'a001', expected: 'new' }, reason: 'refresh assertion' }],
+    });
+    const assertion = applied.steps.find(step => step.id === 's009')?.assertions[0];
+    assert(assertion?.expected === 'new', 'update-assertion should update the matching assertion');
+  },
 }];

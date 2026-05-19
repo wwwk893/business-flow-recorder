@@ -44,7 +44,7 @@ import { createDeepSeekV4FlashProfile, normalizeAiIntentSettings, normalizeProfi
 import { clearAiUsageRecords, loadAiApiKey, loadAiIntentSettings, loadAiProviderProfiles, loadAiUsageRecords, saveAiApiKey, saveAiIntentSettings, saveAiProviderProfiles, withApiKeyPreview } from './aiIntent/storage';
 import { usageRecordsToJsonl } from './aiIntent/usage';
 import type { AiIntentSettings, AiProviderProfile, AiUsageRecord } from './aiIntent/types';
-import { applyRecordingReviewPatch, createAiAssistProvider, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
+import { applyRecordingReviewPatch, createAiAssistProvider, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewContext, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
 import { aiAssistConfigFromSettings } from './aiAssist/providerConfig';
 import { countBusinessFlowPlaybackActions, generateBusinessFlowPlaybackCode, generateBusinessFlowPlaywrightCode } from './flow/codePreview';
 import { appendSyntheticPageContextStepsWithResult, clearFlowRecordingHistory, createAssertion, deleteStepFromFlow, insertEmptyStepAfter, insertWaitStepAfter, mergeActionsIntoFlow, nextAssertionId, normalizeFlowStepIds, type MergeDiagnosticEvent } from './flow/flowBuilder';
@@ -573,6 +573,7 @@ export const CrxRecorder: React.FC = ({
   const syntheticFlushTimerRef = React.useRef<number>();
   const businessFlowPlaybackCodeRef = React.useRef('');
   const aiAssistLastReviewPatchRef = React.useRef<RecordingReviewPatch>();
+  const aiAssistLastReviewContextRef = React.useRef<RecordingReviewContext>();
   const aiAssistLastReviewValidationRef = React.useRef<RecordingReviewValidationResult>();
   const aiAssistRepairRollbackRef = React.useRef<BusinessFlow>();
   const businessFlowEnabledRef = React.useRef(defaultSettings.businessFlowEnabled !== false);
@@ -1450,6 +1451,7 @@ export const CrxRecorder: React.FC = ({
       config: aiAssistConfig,
       contextOptions: { reviewMode },
     });
+    aiAssistLastReviewContextRef.current = result.context;
     if (result.patch)
       aiAssistLastReviewPatchRef.current = result.patch;
     if (result.validation)
@@ -1509,6 +1511,8 @@ export const CrxRecorder: React.FC = ({
       provider,
       config: aiAssistConfig,
       failure,
+      previousReviewContext: aiAssistLastReviewContextRef.current,
+      previousReviewPatch: aiAssistLastReviewPatchRef.current,
     });
     if (result.validation?.ok && result.validation.appliedFlow) {
       const applied = result.validation.appliedFlow;
@@ -1517,8 +1521,8 @@ export const CrxRecorder: React.FC = ({
       const playbackCode = generateBusinessFlowPlaybackCode(applied);
       window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
       appendDiagnosticLog({
-        type: 'ai-assist.segment-replay-requested',
-        message: 'AI Repair patch 已应用，触发回放重试',
+        type: 'ai-assist.repair-retry-requested',
+        message: 'AI Repair patch 已应用，触发全量回放重试',
         data: {
           rootCauseStepId: result.validation.rootCauseStepId,
           symptomStepId: failure.symptomStepId,
@@ -1526,7 +1530,7 @@ export const CrxRecorder: React.FC = ({
       });
       window.dispatch({ event: 'resume' }).catch(error => {
         appendDiagnosticLog({
-          type: 'ai-assist.segment-replay-failed',
+          type: 'ai-assist.repair-retry-dispatch-failed',
           level: 'warn',
           message: 'AI Repair 已刷新代码，但自动重试触发失败',
           data: { error: String(error) },
@@ -1537,7 +1541,7 @@ export const CrxRecorder: React.FC = ({
     }
     setAiAssistRepair({
       status: result.error ? 'error' : 'ready',
-      message: result.error || (result.validation?.ok ? 'AI Repair patch 已校验并写入临时 flow，已触发回放重试。' : result.validation?.errors.join('；') || 'AI Repair 未通过校验。'),
+      message: result.error || (result.validation?.ok ? 'AI Repair patch 已通过 schema/safety/render 校验并写入临时 flow，已触发全量重试，等待运行结果。' : result.validation?.errors.join('；') || 'AI Repair 未通过校验。'),
       validation: result.validation,
       requestId: result.requestId,
     });
@@ -2157,7 +2161,7 @@ export const CrxRecorder: React.FC = ({
       },
     });
     await finalizeCurrentRecordingSession('stop-recording');
-    if (aiAssistConfig.reviewOnStopRecording) {
+    if (aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording) {
       setPanelStage('review');
       setActiveTab('business');
       runAiAssistReview('stop-recording').catch(() => {});
@@ -2169,7 +2173,7 @@ export const CrxRecorder: React.FC = ({
     pendingInsertRecordingRef.current = undefined;
     setInsertRecordingAfterStepId(undefined);
     window.dispatch({ event: 'setMode', params: { mode: 'standby' } }).catch(() => {});
-  }, [aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, setPageContextCaptureActive]);
+  }, [aiAssistConfig.enabled, aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, setPageContextCaptureActive]);
 
   const continueRecording = React.useCallback(() => {
     if (!hasRecordingFlowContext(flowDraft)) {
@@ -2510,6 +2514,7 @@ export const CrxRecorder: React.FC = ({
               selectedRecordId={selectedRecordId}
               draftStatus={recordStatus || draftStatus}
               aiSettings={aiSettings}
+              crxSettings={settings}
               aiProfiles={aiProfiles}
               activeAiProfile={activeAiProfile}
               aiUsageRecords={aiUsageRecords}
@@ -2667,7 +2672,7 @@ export const CrxRecorder: React.FC = ({
                 />
                 <div className={insertRecordingAfterStepId ? 'recording-toolbar inserting' : 'recording-toolbar'}>
                   <button type='button' onClick={mode === 'recording' ? pauseRecording : continueRecording}>{mode === 'recording' ? '暂停' : '继续'}</button>
-                  <button type='button' className='danger' disabled={mode !== 'recording'} onClick={stopRecording}>停止录制</button>
+                  <button type='button' className='danger' disabled={mode !== 'recording'} onClick={stopRecording}>{aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording ? '停止录制并审查' : '停止录制'}</button>
                   <button type='button' onClick={() => saveCurrentRecord()}>保存记录</button>
                   {insertRecordingAfterStepId ? <button type='button' onClick={exitInsertRecording}>退出插入</button> : <button type='button' onClick={() => enterReviewPanel().catch(() => {})}>导出</button>}
                 </div>

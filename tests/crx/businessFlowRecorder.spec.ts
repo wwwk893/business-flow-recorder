@@ -29,7 +29,7 @@ test('shows grouped settings accordion from the flow library', async ({ page, at
   const recorderPage = await attachRecorder(page, { mode: 'business-flow' });
 
   await expect(recorderPage.locator('.flow-library')).toContainText('业务流程记录');
-  await recorderPage.locator('.global-ai-card').getByRole('button', { name: '设置' }).click();
+  await recorderPage.locator('.global-ai-card').filter({ hasText: 'AI Intent 全局配置' }).getByRole('button', { name: '设置' }).click();
   await expect(recorderPage.locator('.recording-status')).toContainText('设置');
   await expect(recorderPage.locator('.settings-accordion-panel')).toContainText('录制偏好与导出安全');
 

@@ -146,7 +146,6 @@ export const AiIntentSettingsPanel: React.FC<{
       <div className='ai-action-row'>
         <button type='button' className='primary' onClick={onGenerate} disabled={generating}>{generating ? 'AI 生成中...' : 'Generate AI Intents'}</button>
       </div>
-      {status && <div className='ai-status'>{status}</div>}
     </details>
 
     <details className='settings-section'>
@@ -210,6 +209,7 @@ export const AiIntentSettingsPanel: React.FC<{
           <button type='button' onClick={() => createProfile('anthropic-compatible')}>新增 Anthropic</button>
           <button type='button' className='danger-outline' onClick={deleteProfile} disabled={profiles.length <= 1}>删除 Profile</button>
         </div>
+        {status && <div className='ai-status'>{status}</div>}
       </div> : <div className='ai-privacy-note'>暂无 Provider Profile。请先新增 OpenAI-compatible 或 Anthropic-compatible profile。</div>}
     </details>
 
@@ -250,7 +250,7 @@ export const AiIntentSettingsPanel: React.FC<{
           允许 Cloud Provider
         </label>
         <label>Max context chars<input type='number' min={4000} value={crxSettings.aiAssistMaxContextChars ?? 28000} onChange={e => updateCrxSettings({ aiAssistMaxContextChars: Number(e.target.value) || 28000 })} /></label>
-        <label>Timeout ms<input type='number' min={1000} value={crxSettings.aiAssistTimeoutMs ?? 20000} onChange={e => updateCrxSettings({ aiAssistTimeoutMs: Number(e.target.value) || 20000 })} /></label>
+        <label>Timeout ms<input type='number' min={1000} value={crxSettings.aiAssistTimeoutMs ?? 60000} onChange={e => updateCrxSettings({ aiAssistTimeoutMs: Number(e.target.value) || 60000 })} /></label>
         <label>Retry limit<input type='number' min={0} max={2} value={crxSettings.aiAssistRetryLimit ?? 0} onChange={e => updateCrxSettings({ aiAssistRetryLimit: Number(e.target.value) || 0 })} /></label>
       </div>
       <div className='ai-privacy-note'>AI 审查复用上方 AI Provider 的 Base URL、Model、API Key 和响应模式。上下文会先脱敏，不发送 cookie、storage、完整 DOM、Authorization、API Key 或完整内网 URL。</div>

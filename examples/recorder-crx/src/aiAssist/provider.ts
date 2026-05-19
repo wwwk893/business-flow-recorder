@@ -164,6 +164,10 @@ async function fetchOpenAiCompatibleJson(config: AiAssistProviderConfig, body: A
     if (!response.ok)
       throw new Error(`HTTP ${response.status}: ${redactAiAssistText(text, 400) || response.statusText}`);
     return text ? JSON.parse(text) : {};
+  } catch (error) {
+    if ((error as Error)?.name === 'AbortError')
+      throw new Error(`AI Assist provider request timed out or was cancelled after ${timeoutMs}ms (${redactAiAssistText(config.endpoint || '')}). Increase AI 审查 Timeout ms or reduce Max context chars if the model needs more time.`);
+    throw error;
   } finally {
     globalThis.clearTimeout(timeout);
     outerSignal?.removeEventListener('abort', abort);
