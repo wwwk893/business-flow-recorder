@@ -2562,7 +2562,19 @@ function tableRootTestIdForStep(step: FlowStep, table?: FlowTableScope) {
   const hasRowEvidence = !!(table.rowKey || table.rowIdentity?.stable || table.rowIdentity?.value || table.rowText);
   if (!hasRowEvidence)
     return undefined;
-  return rawUiTargetTestId(step.target?.raw) || step.context?.before.ui?.targetTestId || step.target?.testId;
+  return [
+    rawUiTargetTestId(step.target?.raw),
+    step.context?.before.ui?.targetTestId,
+    step.target?.testId,
+  ].find(isLikelyTableRootTestId);
+}
+
+function isLikelyTableRootTestId(testId?: string): testId is string {
+  if (!testId)
+    return false;
+  if (looksLikeActionTestId(testId) || isReusableRowActionTestId(testId))
+    return false;
+  return /(^|[-_])(table|grid|list|section|container|card|panel|wrapper|content|region)([-_]|$)/i.test(testId);
 }
 
 function isProTableToolbarAction(step: FlowStep) {

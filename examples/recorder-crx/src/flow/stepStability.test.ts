@@ -5874,6 +5874,68 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'table row action test id is not treated as fallback table root',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's008',
+          order: 1,
+          kind: 'recorded',
+          action: 'click',
+          target: {
+            testId: 'user-row-edit-action',
+            role: 'button',
+            name: '编辑',
+            text: '编辑',
+            displayName: '编辑',
+            scope: {
+              table: {
+                title: '用户列表',
+                rowKey: 'user-42',
+                columnName: '操作',
+              },
+            },
+            raw: {
+              ui: {
+                targetTestId: 'user-row-edit-action',
+                recipe: { kind: 'table-row-action' },
+                table: { rowKey: 'user-42', columnTitle: '操作' },
+              },
+            },
+          },
+          context: {
+            eventId: 'ctx-row-action-testid',
+            capturedAt: 1000,
+            before: {
+              table: {
+                title: '用户列表',
+                rowKey: 'user-42',
+                columnName: '操作',
+              },
+              target: { tag: 'button', role: 'button', testId: 'user-row-edit-action', text: '编辑', normalizedText: '编辑', controlType: 'button' },
+              ui: {
+                library: 'pro-components',
+                component: 'pro-table',
+                targetTestId: 'user-row-edit-action',
+                locatorHints: [],
+                confidence: 0.9,
+                reasons: ['row action test id'],
+              },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const firstStep = stepCodeBlock(code, 's008');
+
+      assert(!firstStep.includes('page.getByTestId("user-row-edit-action").locator('), 'row action test id must not be used as a table root');
+      assert(!firstStep.includes('data-row-key=\\"user-42\\"') && !firstStep.includes('data-row-key="user-42"'), 'row action must not invent row scoping under an action test id');
+      assert(firstStep.includes('page.getByTestId("user-row-edit-action").click();'), 'without a proven table root, the renderer should keep the action locator path');
+    },
+  },
+  {
     name: 'field fill uses visible after dialog scope when before dialog is missing',
     run: () => {
       const flow: BusinessFlow = {
