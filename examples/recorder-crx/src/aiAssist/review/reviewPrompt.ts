@@ -21,6 +21,7 @@ export function buildRecordingReviewPrompt(context: RecordingReviewContext, maxC
     'AntD/ProComponents 规则：表格行操作优先 table testId + rowKey + action control；Modal 字段优先 dialog title/testId + form item label + placeholder/testId；Select option 优先 trigger field label/testId + active popup option；placeholder 只能做辅助，不能在全页面重复时单独使用。',
     '输出 schema:',
     '{"schema":"recording-review-patch/v1","flowId":"optional","diagnosis":{"overallRisk":"low|medium|high|critical","summary":"string","issueCount":0},"issues":[{"issueId":"string","issueKind":"missing-emitted-step|weak-locator|missing-state-transition|propagated-failure-risk|unscoped-table-row-action|unscoped-dialog-field|select-trigger-option-risk|terminal-assertion-risk|false-positive-none","severity":"low|medium|high|critical","rootCauseStepId":"string","affectedStepIds":["string"],"reason":"string","evidence":["string"]}],"patches":[{"op":"force-emit-step|replace-recipe|replace-locator-scope|add-locator-contract-hint|mark-needs-human-review","stepId":"string","reason":"string"}],"validationPlan":["string"],"autoApplyEligibility":{"eligible":false,"reason":"string","maxRisk":"low|medium|high|critical"}}',
+    'Operation requirements: replace-recipe requires recipe object; replace-locator-scope requires scope object; add-locator-contract-hint requires locatorContractHint object; force-emit-step and mark-needs-human-review require only stepId and reason.',
     'Review context:',
     boundedContext,
   ].join('\n');

@@ -18,6 +18,9 @@ export const reviewPromptTests: AiAssistTestCase[] = [{
     assert(prompt.includes('not emitted'), 'prompt should include deterministic review signals');
     assert(prompt.includes('s007') && prompt.includes('s009'), 'prompt should include causal window steps');
     assert(prompt.includes('不要建议 waitForTimeout'), 'prompt should forbid timeout repair');
+    assert(prompt.includes('replace-recipe requires recipe object'), 'prompt should describe replace-recipe payload requirement');
+    assert(prompt.includes('replace-locator-scope requires scope object'), 'prompt should describe replace-locator-scope payload requirement');
+    assert(prompt.includes('add-locator-contract-hint requires locatorContractHint object'), 'prompt should describe locator contract hint payload requirement');
   },
 }, {
   name: 'AI Review prompt packs review signals before bulky step context',
