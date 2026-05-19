@@ -1260,7 +1260,9 @@ function isTableScopedClick(step: FlowStep) {
   if (step.action !== 'click')
     return false;
   const table = step.target?.scope?.table || step.context?.before.table;
-  if (!table?.testId)
+  if (!table)
+    return false;
+  if (!tableRootTestIdForStep(step, table))
     return false;
   return !!(table.rowKey || table.rowIdentity?.value || table.rowText || step.context?.before.target?.role === 'row' || step.target?.role === 'row');
 }
@@ -1302,6 +1304,9 @@ function renderRawActionSource(step: FlowStep, options: EmitStepOptions = {}) {
       const selectTriggerLocator = selectTriggerClickLocator(step);
       if (selectTriggerLocator)
         return `await ${selectTriggerLocator}.click();`;
+      const scopedClickLocator = recordedCssScopedRoleLocator(step);
+      if (scopedClickLocator)
+        return `await ${scopedClickLocator}.click();`;
       const testIdLocator = globalTestIdLocator(step);
       if (testIdLocator) {
         const clickSource = `await ${testIdLocator}.click();`;
@@ -1597,7 +1602,8 @@ function selectTriggerClickLocator(step: FlowStep) {
 }
 
 function preferredTargetLocator(step: FlowStep, options: EmitStepOptions = {}) {
-  return globalTestIdLocator(step) ||
+  return recordedCssScopedRoleLocator(step) ||
+    globalTestIdLocator(step) ||
     antdTreeSelectOptionLocator(step) ||
     antdCascaderOptionLocator(step) ||
     antdSelectOptionLocator(step) ||
@@ -2262,8 +2268,9 @@ function textFromInternalHasTextSelector(selector?: string) {
 function globalTestIdLocator(step: FlowStep) {
   const table = step.target?.scope?.table || step.context?.before.table;
   const tableHasStableRow = !!(table?.rowKey || table?.rowIdentity?.stable);
+  const tableRootTestId = tableRootTestIdForStep(step, table);
   if (step.target?.testId) {
-    if (tableHasStableRow && step.target.testId === table?.testId)
+    if (tableHasStableRow && step.target.testId === tableRootTestId)
       return undefined;
     if (isStructuralChoiceControlTestId(step, step.target.testId))
       return undefined;
@@ -2275,7 +2282,7 @@ function globalTestIdLocator(step: FlowStep) {
     return undefined;
   const testId = step.context?.before.target?.testId;
   if (testId) {
-    if (tableHasStableRow && testId === table?.testId)
+    if (tableHasStableRow && testId === tableRootTestId)
       return undefined;
     if (isStructuralChoiceControlTestId(step, testId))
       return undefined;
@@ -2510,17 +2517,20 @@ function tableScopedLocator(step: FlowStep) {
   const table = step.target?.scope?.table || step.context?.before.table;
   const targetName = targetNameForLocator(step);
   const role = step.target?.role || step.context?.before.target?.role || 'button';
-  if (!table?.testId || !targetName)
+  const tableTestId = tableRootTestIdForStep(step, table);
+  if (!table || !tableTestId || !targetName)
     return undefined;
 
   const rowIdentity = table.rowIdentity;
   const stableRowValue = table.rowKey || (rowIdentity?.stable ? rowIdentity.value : undefined);
   if (stableRowValue) {
     const rowSelector = `tr[data-row-key="${stableRowValue}"], [data-row-key="${stableRowValue}"]`;
-    const rowLocator = `page.getByTestId(${stringLiteral(table.testId)}).locator(${stringLiteral(rowSelector)})`;
-    if (role === 'row' || role === 'cell' || role === 'gridcell' || isRowContainerClick(step, targetName, table))
+    const rowLocator = `page.getByTestId(${stringLiteral(tableTestId)}).locator(${stringLiteral(rowSelector)})`;
+    if (role === 'row' || isRowContainerClick(step, targetName, table))
       return `${rowLocator}.first()`;
     const roleNameOptions = roleNameOptionsSource(step, role, targetName);
+    if (role === 'cell' || role === 'gridcell')
+      return rowActionCellControlLocator(step, rowLocator, role, roleNameOptions);
     return rowLocator +
       `.filter({ has: page.getByRole(${stringLiteral(role)}, ${roleNameOptions}) })` +
       `.first()` +
@@ -2529,14 +2539,78 @@ function tableScopedLocator(step: FlowStep) {
 
   const fallbackRowText = rowIdentity?.value || table.rowText;
   if (fallbackRowText) {
-    const rowLocator = `page.getByTestId(${stringLiteral(table.testId)})` +
+    const rowLocator = `page.getByTestId(${stringLiteral(tableTestId)})` +
       `.locator(${stringLiteral('tr, [role="row"]')})` +
       `.filter({ hasText: ${stringLiteral(fallbackRowText)} })`;
     if (role === 'row')
       return `${rowLocator}.first()`;
-    return `${rowLocator}.getByRole(${stringLiteral(role)}, ${roleNameOptionsSource(step, role, targetName)})`;
+    const roleNameOptions = roleNameOptionsSource(step, role, targetName);
+    if (role === 'cell' || role === 'gridcell')
+      return rowActionCellControlLocator(step, rowLocator, role, roleNameOptions);
+    return `${rowLocator}.getByRole(${stringLiteral(role)}, ${roleNameOptions})`;
   }
+  if (isProTableToolbarAction(step))
+    return `page.getByTestId(${stringLiteral(tableTestId)}).getByRole(${stringLiteral(role)}, ${roleNameOptionsSource(step, role, targetName)})`;
   return undefined;
+}
+
+function tableRootTestIdForStep(step: FlowStep, table?: FlowTableScope) {
+  if (!table)
+    return undefined;
+  if (table.testId)
+    return table.testId;
+  const hasRowEvidence = !!(table.rowKey || table.rowIdentity?.stable || table.rowIdentity?.value || table.rowText);
+  if (!hasRowEvidence)
+    return undefined;
+  return rawUiTargetTestId(step.target?.raw) || step.context?.before.ui?.targetTestId || step.target?.testId;
+}
+
+function isProTableToolbarAction(step: FlowStep) {
+  const raw = step.target?.raw;
+  const ui = raw && typeof raw === 'object' ? (raw as { ui?: { recipe?: { kind?: unknown }; component?: unknown } }).ui : undefined;
+  const kind = String(ui?.recipe?.kind || '');
+  const component = String(ui?.component || '');
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  return kind === 'protable-toolbar-action' || /pro-?table/i.test(component) && /toolbar/i.test(controlType);
+}
+
+function rowActionCellControlLocator(step: FlowStep, rowLocator: string, role: string, roleNameOptions: string) {
+  const selector = rawAction(step.rawAction).selector || step.target?.selector || step.target?.locator || '';
+  const cell = `${rowLocator}.first().getByRole(${stringLiteral(role)}, ${roleNameOptions})`;
+  if (/>>\s*a(?:\b|$)|internal:role=link|role=["']?link/i.test(selector))
+    return `${cell}.locator(${stringLiteral('a, [role="link"]')}).first()`;
+  if (/>>\s*button(?:\b|$)|internal:role=button|role=["']?button/i.test(selector))
+    return `${cell}.locator(${stringLiteral('button, [role="button"]')}).first()`;
+  return `${cell}.locator(${stringLiteral('a, button, [role="button"], [role="link"]')}).first()`;
+}
+
+function recordedCssScopedRoleLocator(step: FlowStep) {
+  if (step.action !== 'click')
+    return undefined;
+  const selector = step.target?.selector || rawAction(step.rawAction).selector || step.target?.locator || '';
+  const parsed = parseRecordedCssScopedRoleSelector(selector);
+  if (!parsed)
+    return undefined;
+  const role = step.target?.role || step.context?.before.target?.role || parsed.role;
+  if (!role || role !== parsed.role)
+    return undefined;
+  return `page.locator(${stringLiteral(parsed.scope)}).getByRole(${stringLiteral(parsed.role)}, ${roleNameOptionsSource(step, parsed.role, parsed.name)})`;
+}
+
+function parseRecordedCssScopedRoleSelector(selector: string) {
+  const match = selector.match(/^(.+?)\s*>>\s*internal:role=([a-z0-9_-]+)\[name=(?:"([^"]+)"|'([^']+)'|([^\\\]]+?))(i|s)\]$/i);
+  if (!match)
+    return undefined;
+  const scope = match[1].trim();
+  if (!scope || /internal:|>>|nth=|:has-text|:text|xpath=/i.test(scope))
+    return undefined;
+  if (!/(^#[\w-]+|\[(?:id|data-testid|data-test-id|data-e2e)=)/i.test(scope))
+    return undefined;
+  const role = match[2];
+  const name = (match[3] || match[4] || match[5] || '').replace(/\\"/g, '"').trim();
+  if (!role || !name)
+    return undefined;
+  return { scope, role, name };
 }
 
 function isRowContainerClick(step: FlowStep, targetName: string, table: NonNullable<FlowTableScope>) {

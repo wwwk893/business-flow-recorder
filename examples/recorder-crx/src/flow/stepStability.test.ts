@@ -5741,6 +5741,198 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'pro table toolbar create preserves recorded css root role scope',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          action: 'click',
+          target: {
+            selector: '[id="LAN定义"] >> internal:role=button[name="plus 新建"i]',
+            testId: 'lan-device-section',
+            role: 'button',
+            name: '新建',
+            text: '新建',
+            displayName: '新建',
+            locatorHint: {
+              strategy: 'global-testid',
+              confidence: 0.62,
+              pageCount: 30,
+              pageIndex: 0,
+            },
+            scope: {
+              section: { title: '| LAN定义', kind: 'card' },
+              table: { title: '| LAN定义', testId: 'lan-device-section', fingerprint: 'lan-device-section::| LAN定义' },
+            },
+            raw: {
+              ui: {
+                library: 'pro-components',
+                component: 'pro-table',
+                targetTestId: 'lan-device-section',
+                recipe: { kind: 'protable-toolbar-action' },
+                table: { title: '| LAN定义' },
+              },
+            },
+          },
+          context: {
+            eventId: 'ctx-lan-create',
+            capturedAt: 1000,
+            before: {
+              section: { title: '| LAN定义', kind: 'card' },
+              table: { title: '| LAN定义', testId: 'lan-device-section', fingerprint: 'lan-device-section::| LAN定义' },
+              target: { role: 'button', text: '新建', normalizedText: '新建', uniqueness: { pageCount: 30, pageIndex: 0 } },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+      const expected = 'page.locator("[id=\\"LAN定义\\"]").getByRole("button", { name: "plus 新建" }).click();';
+
+      assert(code.includes(expected), 'exported replay should keep the recorded section css root around the toolbar button');
+      assert(playback.includes(expected), 'parser-safe replay should keep the recorded section css root around the toolbar button');
+      assert(!code.includes('getByRole("button", { name: "新建" }).nth(0)'), 'exported replay must not fall back to global nth for repeated create buttons');
+      assert(!playback.includes('getByRole("button", { name: "新建" }).nth(0)'), 'parser-safe replay must not fall back to global nth for repeated create buttons');
+    },
+  },
+  {
+    name: 'table row cell action uses structural table root test id and stable row key',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's007',
+          order: 1,
+          kind: 'recorded',
+          action: 'click',
+          rawAction: {
+            action: {
+              name: 'click',
+              selector: 'internal:role=cell[name="edit"s] >> a',
+            },
+          },
+          target: {
+            selector: 'internal:role=cell[name="edit"s] >> a',
+            testId: 'lan-device-section',
+            role: 'cell',
+            name: 'edit',
+            text: 'LAN1 DHCP类型：关闭 添加描述',
+            displayName: 'LAN1 DHCP类型：关闭 添加描述',
+            scope: {
+              table: {
+                title: '高级选项',
+                rowKey: 'cd9c18c90bedd047b13a260e126093ad',
+                rowText: 'LAN1 DHCP类型：关闭 添加描述',
+                columnName: '操作',
+              },
+            },
+            raw: {
+              ui: {
+                targetTestId: 'lan-device-section',
+                recipe: { kind: 'table-row-action' },
+                table: { rowKey: 'cd9c18c90bedd047b13a260e126093ad', columnTitle: '操作' },
+              },
+            },
+          },
+          context: {
+            eventId: 'ctx-lan-edit',
+            capturedAt: 1000,
+            before: {
+              table: {
+                title: '高级选项',
+                rowKey: 'cd9c18c90bedd047b13a260e126093ad',
+                rowText: 'LAN1 DHCP类型：关闭 添加描述',
+                columnName: '操作',
+              },
+              target: { role: 'cell', text: 'edit', normalizedText: 'edit', controlType: 'table-row-action' },
+              ui: {
+                library: 'pro-components',
+                component: 'pro-table',
+                targetTestId: 'lan-device-section',
+                locatorHints: [],
+                confidence: 0.9,
+                reasons: ['table root test id'],
+              },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const firstStep = stepCodeBlock(code, 's007');
+
+      assert(firstStep.includes('page.getByTestId("lan-device-section")'), 'row action should reuse the observed table root test id');
+      assert(firstStep.includes('data-row-key=\\"cd9c18c90bedd047b13a260e126093ad\\"') || firstStep.includes('data-row-key="cd9c18c90bedd047b13a260e126093ad"'), 'row action should scope to the stable row key');
+      assert(firstStep.includes('getByRole("cell", { name: "edit", exact: true })'), 'row action should keep the exact recorded cell identity');
+      assert(firstStep.includes('.locator("a, [role=\\"link\\"]").first().click();'), 'row action should click the actionable link inside the operation cell');
+      assert(!firstStep.includes('has no runnable Playwright action source'), 'row action should be runnable');
+      assert(!firstStep.includes('page.getByTestId("lan-device-section").click()'), 'row action must not click the table container');
+    },
+  },
+  {
+    name: 'field fill uses visible after dialog scope when before dialog is missing',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's009',
+          order: 1,
+          kind: 'recorded',
+          action: 'fill',
+          value: '192.168.1.1/24',
+          rawAction: {
+            action: {
+              name: 'fill',
+              selector: 'internal:attr=[placeholder="例如：192.168.1.1/24"i]',
+              text: '192.168.1.1/24',
+            },
+          },
+          target: {
+            role: 'textbox',
+            name: 'prefixAndGateway',
+            label: 'LAN IP',
+            placeholder: '例如：192.168.1.1/24',
+            displayName: 'textbox prefixAndGateway',
+            scope: { form: { label: 'LAN IP', name: 'prefixAndGateway' } },
+          },
+          context: {
+            eventId: 'ctx-lan-ip-fill',
+            capturedAt: 1000,
+            before: {
+              form: { label: 'LAN IP', name: 'prefixAndGateway' },
+              target: { role: 'textbox', placeholder: '例如：192.168.1.1/24', controlType: 'input' },
+              ui: {
+                library: 'pro-components',
+                component: 'pro-form-field',
+                form: { label: 'LAN IP', name: 'prefixAndGateway', placeholder: '例如：192.168.1.1/24' },
+                locatorHints: [],
+                confidence: 0.9,
+                reasons: ['field context'],
+              },
+            },
+            after: {
+              dialog: { type: 'modal', title: '编辑LAN1', visible: true },
+              openedDialog: { type: 'modal', title: '编辑LAN1', visible: true },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+      const expected = 'filter({ hasText: "编辑LAN1" }).last().getByPlaceholder("例如：192.168.1.1/24").fill("192.168.1.1/24");';
+
+      assert(code.includes(expected), 'exported replay should scope the placeholder fill to the visible edit dialog from after context');
+      assert(playback.includes(expected), 'parser-safe replay should scope the placeholder fill to the visible edit dialog from after context');
+      assert(!code.includes('await page.getByPlaceholder("例如：192.168.1.1/24").fill("192.168.1.1/24");'), 'exported replay must not use a page-global placeholder');
+      assert(!playback.includes('await page.getByPlaceholder("例如：192.168.1.1/24").fill("192.168.1.1/24");'), 'parser-safe replay must not use a page-global placeholder');
+    },
+  },
+  {
     name: 'table row code preview scopes row target without nesting row locator inside itself',
     run: () => {
       const flow = mergeActionsIntoFlow(undefined, [rawClickAction('tr >> internal:has-text="Alice 管理员 编辑"i')], [], {});
