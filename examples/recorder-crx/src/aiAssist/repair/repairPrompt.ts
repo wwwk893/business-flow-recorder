@@ -3,11 +3,11 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  */
-import { redactAiAssistText } from '../redactor';
+import { compactReplayRepairContextForPrompt, stringifyPromptContext } from '../promptContext';
 import type { ReplayRepairContext } from './types';
 
 export function buildReplayRepairPrompt(context: ReplayRepairContext, maxContextChars = 28_000) {
-  const boundedContext = redactAiAssistText(JSON.stringify(context), maxContextChars);
+  const boundedContext = stringifyPromptContext(compactReplayRepairContextForPrompt(context), maxContextChars);
   return [
     'You are the Business Flow Recorder replay repair agent.',
     'Do not only repair the failing line. First find the first divergence and root cause step.',

@@ -2728,7 +2728,7 @@ export const CrxRecorder: React.FC = ({
                   onApplyAiReviewPatch={applyAiAssistReviewPatch}
                   onAiRepairAndRetry={runAiAssistRepairAndRetry}
                   onRollbackAiRepair={rollbackAiAssistRepair}
-                  showAiRepairButton={aiAssistConfig.repairOnFailureButton}
+                  showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
                   showStepToolbar={false}
                 />}
               </> : <FlowSelectionGuard
@@ -2771,7 +2771,7 @@ export const CrxRecorder: React.FC = ({
                 onApplyAiReviewPatch={applyAiAssistReviewPatch}
                 onAiRepairAndRetry={runAiAssistRepairAndRetry}
                 onRollbackAiRepair={rollbackAiAssistRepair}
-                showAiRepairButton={aiAssistConfig.repairOnFailureButton}
+                showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
               />}
               {activeTab === 'code' && <div className='embedded-recorder'>
                 {settings.experimental && <div className='code-actions'>

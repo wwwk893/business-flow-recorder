@@ -9,6 +9,7 @@ import { redactorTests } from './redactor.test';
 import { repairContextBuilderTests } from './repairContextBuilder.test';
 import { repairLanPropagatedFailureTests } from './repairLanPropagatedFailure.test';
 import { repairPatchSchemaTests } from './repairPatchSchema.test';
+import { repairPromptTests } from './repairPrompt.test';
 import { repairValidatorTests } from './repairValidator.test';
 import { reviewContextBuilderTests } from './reviewContextBuilder.test';
 import { reviewLanPropagatedRiskTests } from './reviewLanPropagatedRisk.test';
@@ -26,6 +27,7 @@ export const aiAssistTests: AiAssistTestCase[] = [
   ...reviewValidatorTests,
   ...reviewLanPropagatedRiskTests,
   ...repairContextBuilderTests,
+  ...repairPromptTests,
   ...causalWindowTests,
   ...repairPatchSchemaTests,
   ...repairValidatorTests,

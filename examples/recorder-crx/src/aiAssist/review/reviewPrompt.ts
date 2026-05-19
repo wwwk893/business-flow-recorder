@@ -3,11 +3,11 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  */
-import { redactAiAssistText } from '../redactor';
+import { compactRecordingReviewContextForPrompt, stringifyPromptContext } from '../promptContext';
 import type { RecordingReviewContext } from './types';
 
 export function buildRecordingReviewPrompt(context: RecordingReviewContext, maxContextChars = 28_000) {
-  const boundedContext = redactAiAssistText(JSON.stringify(context), maxContextChars);
+  const boundedContext = stringifyPromptContext(compactRecordingReviewContextForPrompt(context), maxContextChars);
   return [
     '你是 Business Flow Recorder 的 stop-recording review agent。',
     '你正在审查规则生成的回放代码是否可能在真正运行前失败；不要等失败发生才修。',

@@ -56,7 +56,7 @@ export const AiAssistReviewCard: React.FC<{
           <strong>{review.patch.issues[0].issueKind}: {review.patch.issues[0].rootCauseStepId}</strong>
           <span>{review.patch.issues[0].reason} {reviewApplyHint}</span>
         </div>
-        <button type='button' className='mini-button' disabled={!review.validation?.ok || review.status === 'running'} onClick={onApplyReviewPatch}>{review.validation?.autoApply ? '已自动应用' : '确认应用'}</button>
+        <button type='button' className='mini-button' disabled={!!review.validation?.autoApply || !review.validation?.ok || review.status === 'running'} onClick={onApplyReviewPatch}>{review.validation?.autoApply ? '已自动应用' : '确认应用'}</button>
       </div>}
       {showRepairButton && <div className='review-card'>
         <span className={`risk ${repair.status === 'error' ? 'p1' : repair.status === 'ready' ? 'ok' : 'p1'}`}>{repair.status}</span>
