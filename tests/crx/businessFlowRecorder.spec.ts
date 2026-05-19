@@ -35,9 +35,13 @@ test('shows grouped settings accordion from the flow library', async ({ page, at
 
   const highFrequency = recorderPage.locator('.settings-section').filter({ hasText: '高频录制偏好' });
   const aiDetails = recorderPage.locator('.settings-section').filter({ hasText: 'AI Intent 细节' });
+  const aiProvider = recorderPage.locator('.settings-section').filter({ has: recorderPage.locator('summary').filter({ hasText: /^AI Provider/ }) });
+  const aiReview = recorderPage.locator('.settings-section').filter({ hasText: 'AI 审查' });
   const privacyExport = recorderPage.locator('.settings-section').filter({ hasText: '隐私与导出' });
   await expect(highFrequency).toHaveJSProperty('open', true);
   await expect(aiDetails).toHaveJSProperty('open', false);
+  await expect(aiProvider).toHaveJSProperty('open', false);
+  await expect(aiReview).toHaveJSProperty('open', false);
   await expect(privacyExport).toHaveJSProperty('open', false);
 
   await privacyExport.locator('summary').click();
@@ -47,8 +51,17 @@ test('shows grouped settings accordion from the flow library', async ({ page, at
 
   await aiDetails.locator('summary').click();
   await expect(aiDetails).toHaveJSProperty('open', true);
-  await expect(aiDetails).toContainText('API Key');
-  await expect(aiDetails.locator('input[type="password"]')).toBeVisible();
+  await expect(aiDetails).toContainText('Generate AI Intents');
+
+  await aiProvider.locator('summary').click();
+  await expect(aiProvider).toHaveJSProperty('open', true);
+  await expect(aiProvider).toContainText('API Key');
+  await expect(aiProvider.locator('input[type="password"]')).toBeVisible();
+
+  await aiReview.locator('summary').click();
+  await expect(aiReview).toHaveJSProperty('open', true);
+  await expect(aiReview).toContainText('停止录制后自动审查');
+  await expect(aiReview).toContainText('Provider kind');
 });
 
 test('generated replay terminal verification fails when a created row is missing', async ({ context }) => {
