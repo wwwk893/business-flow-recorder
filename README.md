@@ -60,6 +60,8 @@ The recorder can:
 - generate Playwright replay code;
 - run parser-safe playback inside the plugin;
 - verify generated replay with terminal-state assertions;
+- optionally run plugin-driven AI Review / Repair through a configured
+  OpenAI-compatible provider, with structured patch validation;
 - store and restore local flow drafts.
 
 ## Architecture
@@ -94,6 +96,7 @@ docs/architecture/RECORDER_REPLAY_ARCHITECTURE.md
 examples/recorder-crx/README.md
 tests/crx/TEST_LAYERING.md
 docs/harness/README.md
+docs/ai-assist-review-repair-hermes-guide.md
 ```
 
 ## Business Flow Artifacts
@@ -223,8 +226,8 @@ Out of scope for the current recorder MVP:
 - Native Messaging runner integration;
 - full local Node runner platform;
 - CI platform orchestration;
-- AI-generated Playwright specs;
-- AI repair loops;
+- arbitrary AI-generated Playwright specs that bypass recorder artifacts;
+- selector self-healing that bypasses deterministic validation;
 - automatic Git or PR creation.
 
 Those can be future layers, but the recorder must first produce stable,
