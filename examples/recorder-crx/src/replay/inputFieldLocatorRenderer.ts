@@ -71,29 +71,46 @@ export function fieldLocator(step: FlowStep, hooks: InputFieldLocatorHooks, opti
       return `${root}.locator(${stringLiteral('input:visible, textarea:visible, [contenteditable="true"]')}).first()`;
   }
   if (isTextLikeField && fieldName && genericPlaceholder && preferFieldContext) {
-    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    const root = hooks.dialogRootLocator(dialogScopeForField(step));
     if (!labelForLocator)
       return `${root}.locator(${stringLiteral(fieldNameInputSelector(fieldName))}).first()`;
   }
   if (isTextLikeField && placeholder && !genericPlaceholder && preferFieldContext) {
-    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    const root = hooks.dialogRootLocator(dialogScopeForField(step));
     return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
   }
   if (isTextLikeField && fieldName && !labelForLocator && preferFieldContext) {
-    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    const root = hooks.dialogRootLocator(dialogScopeForField(step));
     return `${root}.locator(${stringLiteral(fieldNameInputSelector(fieldName))}).first()`;
   }
   if (labelForLocator && isSelectLikeField)
     return hooks.antdSelectFieldLocator(step) || `page.getByRole('combobox', { name: ${stringLiteral(labelForLocator)} })`;
   if (labelForLocator) {
-    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    const root = hooks.dialogRootLocator(dialogScopeForField(step));
     return `${root}.getByLabel(${stringLiteral(labelForLocator)})`;
   }
   if (isTextLikeField && placeholder && preferFieldContext) {
-    const root = hooks.dialogRootLocator(step.target?.scope?.dialog || step.context?.before.dialog);
+    const root = hooks.dialogRootLocator(dialogScopeForField(step));
     return `${root}.getByPlaceholder(${stringLiteral(placeholder)})`;
   }
   return undefined;
+}
+
+function dialogScopeForField(step: FlowStep) {
+  return step.target?.scope?.dialog ||
+    step.context?.before.dialog ||
+    persistentVisibleFieldDialog(step.context?.after?.dialog) ||
+    persistentVisibleFieldDialog(step.context?.after?.openedDialog);
+}
+
+function persistentVisibleFieldDialog(dialog: any) {
+  if (!dialog || dialog.visible === false)
+    return undefined;
+  if (!/^(modal|drawer)$/.test(String(dialog.type || '')))
+    return undefined;
+  if (!dialog.title && !dialog.testId)
+    return undefined;
+  return dialog;
 }
 
 function isContainerTestIdForFill(step: FlowStep, testId: string, hooks: InputFieldLocatorHooks) {
