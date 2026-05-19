@@ -157,7 +157,7 @@ function emittedSourceSafetyFindings(source: string[] | undefined, impact: Safet
 }
 
 function isScopedOrdinalEvidenceSource(source: string) {
-  return isScopedOverlayConfirmSource(source) || isScopedRowKeyActionSource(source) || isScopedRowTextActionSource(source);
+  return isScopedOverlayConfirmSource(source) || isScopedVisibleDialogTestIdActionSource(source) || isScopedRowKeyActionSource(source) || isScopedRowTextActionSource(source);
 }
 
 function isScopedOverlayConfirmSource(source: string) {
@@ -165,6 +165,12 @@ function isScopedOverlayConfirmSource(source: string) {
   if (!confirmButton)
     return false;
   return /\.ant-popover/.test(source) && /:has\(\.ant-popconfirm-buttons\)/.test(source) ||
+    /\.ant-modal:not|\.ant-drawer:not|\[role=\\"dialog\\"\]:visible|\[role="dialog"\]:visible/.test(source) ||
+    /getByTestId\(["'][^"']*(?:modal|dialog|drawer)[^"']*["']\)\.last\(\)\.getByRole\(["']button["']/.test(source);
+}
+
+function isScopedVisibleDialogTestIdActionSource(source: string) {
+  return /\.last\(\)\.getByTestId\(["'][^"']+["']\)/.test(source) &&
     /\.ant-modal:not|\.ant-drawer:not|\[role=\\"dialog\\"\]:visible|\[role="dialog"\]:visible/.test(source);
 }
 

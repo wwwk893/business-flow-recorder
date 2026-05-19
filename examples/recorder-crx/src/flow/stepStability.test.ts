@@ -2494,7 +2494,8 @@ const tests: TestCase[] = [
       };
       const code = generateBusinessFlowPlaywrightCode(flow);
 
-      assert(code.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]").filter({ hasText: "Create Environment" }).getByRole("button", { name: "Create", exact: true }).click();'), 'dialog-scoped role locator should not widen exact role evidence');
+      assert(code.includes('.ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible'), 'dialog-scoped role locator should use visible modal roots');
+      assert(code.includes('filter({ hasText: "Create Environment" }).last().getByRole("button", { name: "Create", exact: true }).click();'), 'dialog-scoped role locator should not widen exact role evidence');
     },
   },
   {
@@ -2522,7 +2523,8 @@ const tests: TestCase[] = [
       };
       const code = generateBusinessFlowPlaywrightCode(flow);
 
-      assert(code.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]").filter({ hasText: "Create Environment" }).getByRole("button", { name: "Create", exact: true }).click();'), 'dialog scope should be stronger than preserving a global exact recorded source');
+      assert(code.includes('.ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible'), 'dialog-scoped exact replay should use visible modal roots');
+      assert(code.includes('filter({ hasText: "Create Environment" }).last().getByRole("button", { name: "Create", exact: true }).click();'), 'dialog scope should be stronger than preserving a global exact recorded source');
       assert(!code.includes(`page.getByRole('button', { name: 'Create', exact: true }).click();`), 'dialog-scoped replay must not be replaced by the recorded global exact source');
     },
   },
@@ -2618,6 +2620,80 @@ const tests: TestCase[] = [
       assertEqual(countBusinessFlowPlaybackActions(flow), countBusinessFlowPlaybackActionsFromReplay(flow));
       assert(code.includes('getByRole("combobox", { name: "WAN口" })') || code.includes('page.locator(".ant-form-item").filter({ hasText: "WAN口" })'), 'exported replay should still open the select before choosing the option');
       assert(code.includes('xtest16:WAN1'), 'exported replay should still choose the intended option');
+    },
+  },
+  {
+    name: 'repeat AntD option does not inherit previous text field as select trigger',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            kind: 'recorded',
+            action: 'fill',
+            target: {
+              role: 'textbox',
+              name: '* 地址池名称',
+              label: '* 地址池名称',
+              displayName: '* 地址池名称',
+              scope: { form: { label: '* 地址池名称' } },
+            },
+            value: 'test1',
+            rawAction: { action: { name: 'fill', selector: 'internal:role=textbox[name="* 地址池名称"i]', text: 'test1' } },
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            kind: 'recorded',
+            action: 'fill',
+            target: { role: 'combobox', name: '* WAN口' },
+            value: 'xtest16',
+            rawAction: { action: { name: 'fill', selector: 'internal:role=combobox[name="* WAN口"i]', text: 'xtest16' } },
+            assertions: [],
+          },
+          {
+            id: 's003',
+            order: 3,
+            kind: 'recorded',
+            action: 'click',
+            target: { role: 'combobox', name: '* WAN口' },
+            rawAction: { action: { name: 'click', selector: 'internal:role=combobox[name="* WAN口"i]' } },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            kind: 'recorded',
+            action: 'click',
+            target: { text: 'xtest16:WAN1', displayName: 'xtest16:WAN1', selector: 'internal:text="xtest16:WAN1"s' },
+            rawAction: { action: { name: 'click', selector: 'internal:text="xtest16:WAN1"s' } },
+            assertions: [],
+          },
+        ],
+        repeatSegments: [{
+          id: 'repeat-ipv4-pool',
+          name: '批量创建IPv4地址池',
+          stepIds: ['s001', 's002', 's003', 's004'],
+          parameters: [
+            { id: 'p001', label: '* 地址池名称', sourceStepId: 's001', currentValue: 'test1', variableName: 'poolName', enabled: true },
+            { id: 'p002', label: '* WAN口', sourceStepId: 's004', currentValue: 'xtest16:WAN1', variableName: 'port', enabled: true },
+          ],
+          rows: [{ id: 'row-1', values: { p001: 'test1', p002: 'xtest16:WAN1' } }],
+          createdAt: '2026-05-19T00:00:00.000Z',
+          updatedAt: '2026-05-19T00:00:00.000Z',
+        }],
+      };
+
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+
+      assert(code.includes('filter({ hasText: "WAN口" }).locator(".ant-select-selector, .ant-cascader-picker, .ant-select").first()'), 'exported repeat replay should keep the AntD option owned by the WAN field');
+      assert(playback.includes('filter({ hasText: "WAN口" }).locator(".ant-select-selector, .ant-cascader-picker").locator("input:visible").fill("xtest16")') || playback.includes('filter({ hasText: "WAN口" }).locator(".ant-select-selector, .ant-cascader-picker").click()'), 'parser-safe repeat replay should keep the AntD option owned by the WAN field');
+      assert(!code.includes('filter({ hasText: "地址池名称" }).locator(".ant-select-selector'), 'exported repeat replay must not manufacture a select trigger from the previous text field');
+      assert(!playback.includes('filter({ hasText: "地址池名称" }).locator(".ant-select-selector'), 'parser-safe repeat replay must not manufacture a select trigger from the previous text field');
     },
   },
   {
@@ -3942,8 +4018,8 @@ const tests: TestCase[] = [
       const code = generateBusinessFlowPlaywrightCode(flow);
       const playback = generateBusinessFlowPlaybackCode(flow);
 
-      assert(code.includes('filter({ hasText: "新建IPv4地址池" }).getByLabel("地址池名称").fill("test123")'), 'exported replay should use modal-scoped field label identity');
-      assert(playback.includes('filter({ hasText: "新建IPv4地址池" }).getByLabel("地址池名称").fill("test123")'), 'parser-safe replay should use modal-scoped field label identity');
+      assert(code.includes('filter({ hasText: "新建IPv4地址池" }).last().getByLabel("地址池名称").fill("test123")'), 'exported replay should use modal-scoped field label identity');
+      assert(playback.includes('filter({ hasText: "新建IPv4地址池" }).last().getByLabel("地址池名称").fill("test123")'), 'parser-safe replay should use modal-scoped field label identity');
       assert(!code.includes('getByPlaceholder("请输入").fill("test123")'), 'exported replay must not use the generic modal placeholder as field identity');
       assert(!playback.includes('getByPlaceholder("请输入").fill("test123")'), 'parser-safe replay must not use the generic modal placeholder as field identity');
     },
@@ -5770,8 +5846,9 @@ test('demo', async ({ page }) => {
       };
       const firstStep = stepCodeBlock(generateBusinessFlowPlaywrightCode(scoped), 's001');
 
-      assert(firstStep.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]")'), 'should start from dialog scope');
+      assert(firstStep.includes('page.locator(".ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible, .ant-drawer:not(.ant-drawer-hidden):visible, [role=\\"dialog\\"]:visible")'), 'should start from visible dialog scope');
       assert(firstStep.includes('filter({ hasText: "新建用户" })'), 'should filter dialog by title');
+      assert(firstStep.includes('.last().getByRole("button"'), 'should use the topmost matching dialog');
       assert(firstStep.includes('getByRole("button", { name: /^(确定|确\\s*定)$/ })'), 'should click confirm button inside dialog with whitespace-tolerant name matching');
     },
   },
@@ -5878,6 +5955,76 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'nested modal confirm uses recorded modal root test id instead of broad title filter',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's006',
+          order: 1,
+          kind: 'recorded',
+          action: 'click',
+          target: {
+            selector: 'internal:testid=[data-testid="ha-wan-transport-modal"s] >> internal:role=button[name="确 定"i]',
+            testId: 'ha-wan-transport-modal',
+            role: 'button',
+            name: '确 定',
+            text: '确 定',
+            displayName: '确 定',
+            scope: { dialog: { type: 'modal', title: '增加传输网络', visible: true } },
+            raw: {
+              ui: {
+                library: 'pro-components',
+                component: 'modal-form',
+                targetText: '确 定',
+                targetTestId: 'ha-wan-transport-modal',
+                overlay: { type: 'modal', title: '增加传输网络', visible: true },
+                locatorHints: [],
+                confidence: 0.9,
+                reasons: ['modal root test id scope'],
+              },
+            },
+          },
+          context: {
+            eventId: 'ctx-nested-modal-confirm',
+            capturedAt: 1000,
+            before: {
+              dialog: { type: 'modal', title: '增加传输网络', visible: true },
+              target: {
+                tag: 'button',
+                role: 'button',
+                text: '确 定',
+                normalizedText: '确 定',
+                framework: 'antd',
+                controlType: 'button',
+                uniqueness: { pageCount: 2, pageIndex: 1 },
+              },
+              ui: {
+                library: 'pro-components',
+                component: 'modal-form',
+                targetText: '确 定',
+                targetTestId: 'ha-wan-transport-modal',
+                overlay: { type: 'modal', title: '增加传输网络', visible: true },
+                locatorHints: [],
+                confidence: 0.9,
+                reasons: ['modal root test id scope'],
+              },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playback = generateBusinessFlowPlaybackCode(flow);
+      const expected = 'page.getByTestId("ha-wan-transport-modal").last().getByRole("button", { name: /^(确定|确\\s*定)$/ }).click();';
+
+      assert(code.includes(expected), 'exported replay should click inside the recorded modal root test id');
+      assert(playback.includes(expected), 'parser-safe replay should click inside the recorded modal root test id');
+      assert(!code.includes('filter({ hasText: "增加传输网络" }).getByRole("button"'), 'exported replay must not use broad title-only dialog filtering when modal root test id exists');
+      assert(!playback.includes('filter({ hasText: "增加传输网络" }).getByRole("button"'), 'parser-safe replay must not use broad title-only dialog filtering when modal root test id exists');
+    },
+  },
+  {
     name: 'AntD delete test id synthesizes popconfirm confirmation and drops synthetic echo click',
     run: () => {
       const flow: BusinessFlow = {
@@ -5979,14 +6126,14 @@ test('demo', async ({ page }) => {
       const code = generateBusinessFlowPlaywrightCode(flow);
       const playbackCode = generateBusinessFlowPlaybackCode(flow);
 
-      assert(code.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]").filter({ hasText: "编辑WAN2" }).getByTestId("wan-transport-row-delete-action").click();'), 'delete action should click the row delete control inside the dialog instead of using a page-level nth');
+      assert(code.includes('page.locator(".ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible, .ant-drawer:not(.ant-drawer-hidden):visible, [role=\\"dialog\\"]:visible").filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-transport-row-delete-action").click();'), 'delete action should click the row delete control inside the visible topmost dialog instead of using a page-level nth');
       assert(!code.includes('page.getByTestId("wan-transport-row-delete-action").nth(1).click();'), 'dialog-owned delete action should not keep a page-level duplicate ordinal');
       assert(code.includes('page.locator(".ant-popover:not(.ant-popover-hidden):not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active)").filter({ hasText: "删除此行？" }).getByRole("button", { name: /^(确定|确 定)$/ }).click();'), 'normal export should use the captured AntD popconfirm title when it is available');
       assert(code.includes('page.locator(".ant-popover:not(.ant-popover-hidden):not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active)").filter({ hasText: "删除此行？" }).waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});'), 'normal export should wait for the captured popconfirm to close');
       assertEqual((code.match(/ant-popover[^\n]+getByRole\("button", \{ name: \/\^\(确定\|确 定\)\$\/ \}\)\.click\(\);/g) || []).length, 1);
       assert(!code.includes('page.getByRole("button", { name: "确 定" }).click();'), 'dialog confirm echo should not fall back to a page-global ambiguous role locator');
       assertEqual((code.match(/getByTestId\("wan-config-confirm"\)\.click\(\);/g) || []).length, 1);
-      assert(playbackCode.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]").filter({ hasText: "编辑WAN2" }).getByTestId("wan-transport-row-delete-action").click();'), 'runtime playback should keep the dialog-scoped delete click');
+      assert(playbackCode.includes('page.locator(".ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible, .ant-drawer:not(.ant-drawer-hidden):visible, [role=\\"dialog\\"]:visible").filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-transport-row-delete-action").click();'), 'runtime playback should keep the visible topmost dialog-scoped delete click');
       const runtimeWaitIndex = playbackCode.indexOf('page.waitForTimeout(300)');
       const runtimePopoverConfirmIndex = playbackCode.indexOf('page.locator(".ant-popover:not(.ant-popover-hidden):not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):has(.ant-popconfirm-buttons)").last().getByRole("button", { name: /^(确定|确 定)$/ }).click();');
       assert(runtimeWaitIndex >= 0, 'runtime playback should give the AntD Popconfirm animation a parser-safe boundary');
@@ -6326,7 +6473,8 @@ test('demo', async ({ page }) => {
 
       const code = generateBusinessFlowPlaywrightCode(flow);
 
-      assert(code.includes('page.locator(".ant-modal, .ant-drawer, [role=\\"dialog\\"]").filter({ hasText: "二次确认" }).getByRole("button", { name: /^(确定|确\\s*定)$/ }).click();'), 'real second modal confirmation should be kept and scoped to the active dialog');
+      assert(code.includes('.ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible'), 'real second modal confirmation should use visible modal roots');
+      assert(code.includes('filter({ hasText: "二次确认" }).last().getByRole("button", { name: /^(确定|确\\s*定)$/ }).click();'), 'real second modal confirmation should be kept and scoped to the active dialog');
       assert(!code.includes('page.getByRole("button", { name: "确 定" }).click();'), 'second modal confirmation should not use a page-global ambiguous role locator');
     },
   },
@@ -13622,7 +13770,7 @@ test('demo', async ({ page }) => {
       const secondStep = stepCodeBlock(code, 's002');
 
       assert(!code.includes('filter({ hasText: "编辑配置" }).waitFor({ state: "hidden"'), 'modal-closed assertion should not block before a captured second dialog action');
-      assert(secondStep.includes('filter({ hasText: "二次确认" }).getByRole("button"'), 'second dialog action should remain scoped to the active dialog');
+      assert(secondStep.includes('filter({ hasText: "二次确认" }).last().getByRole("button"'), 'second dialog action should remain scoped to the active topmost dialog');
       assert(secondStep.includes('.click();'), 'second dialog action should still be emitted');
     },
   },

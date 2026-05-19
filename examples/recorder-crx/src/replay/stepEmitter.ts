@@ -215,15 +215,22 @@ function isAntdSelectFieldStep(step: FlowStep, nextStep?: FlowStep) {
   const selector = rawAction(step.rawAction).selector || step.target?.selector || step.target?.locator || '';
   const source = step.sourceCode || '';
   const explicitTextField = hasExplicitTextFieldContext(step);
+  const sourceSelectTrigger = hasAntdSelectTriggerEvidence(step);
   const sourceCombobox = !explicitTextField && (/getByRole\(["']combobox["']/.test(source) || /role=combobox/.test(selector));
-  const isAntdLike = framework === 'antd' || framework === 'procomponents' || step.target?.role === 'combobox' || sourceCombobox;
-  const isPopupField = !explicitTextField && (controlType === 'select' || controlType === 'tree-select' || controlType === 'cascader' || step.target?.role === 'combobox' || sourceCombobox);
+  const isAntdLike = framework === 'antd' || framework === 'procomponents' || step.target?.role === 'combobox' || sourceCombobox || sourceSelectTrigger;
+  const isPopupField = !explicitTextField && (controlType === 'select' || controlType === 'tree-select' || controlType === 'cascader' || step.target?.role === 'combobox' || sourceCombobox || sourceSelectTrigger);
   if (step.action === 'fill' && isPopupField && !explicitTextField && !(nextStep && looksLikeDropdownOptionStepForDedup(nextStep))) {
     const hasOnlyWeakSelectEvidence = !step.target?.role && !/getByRole\(["']combobox["']|role=combobox/.test(source) && !/role=combobox/.test(selector);
     if (hasOnlyWeakSelectEvidence)
       return false;
   }
   return !!label && isAntdLike && isPopupField && (step.action === 'click' || step.action === 'fill');
+}
+
+function hasAntdSelectTriggerEvidence(step: FlowStep) {
+  const selector = rawAction(step.rawAction).selector || step.target?.selector || step.target?.locator || '';
+  const source = step.sourceCode || '';
+  return /(?:^|[.\s"'])(?:ant-select-selector|ant-cascader-picker|ant-select)(?:\b|["'])/.test(`${selector}\n${source}`);
 }
 
 function looksLikeSelectControlTestId(testId: string) {
@@ -245,7 +252,7 @@ function selectStepFormContext(step: FlowStep) {
   const form = step.context?.before.form || step.target?.scope?.form;
   if (form?.label)
     return form;
-  const label = step.target?.label || popupFieldLabelFromName(step.target?.name || step.target?.text || step.target?.displayName) || comboboxNameFromSource(step.sourceCode || '');
+  const label = step.target?.label || popupFieldLabelFromName(step.target?.name || step.target?.text || step.target?.displayName) || comboboxNameFromSource(step.sourceCode || '') || formItemLabelFromSource(step.sourceCode || '');
   return label ? { ...form, label } : form;
 }
 
@@ -980,7 +987,7 @@ function previousStepSelectTriggerForActiveOption(previousStep?: FlowStep) {
   if (!previousStep)
     return undefined;
   const testId = previousStep.target?.testId || previousStep.context?.before.target?.testId || '';
-  if (!isAntdSelectFieldStep(previousStep) && !looksLikeSelectControlTestId(testId) && !antdSelectFieldLocator(previousStep))
+  if (!isAntdSelectFieldStep(previousStep) && !looksLikeSelectControlTestId(testId))
     return undefined;
   return previousSelectTriggerLocator(previousStep);
 }
@@ -1038,13 +1045,13 @@ function contractDialogScopedLocator(candidate: LocatorCandidate, step: FlowStep
   if (step.action === 'click' && dialogOpenedByThisStep(step, dialog))
     return undefined;
   const root = dialogRootLocator(dialog);
-  if (payload.testId && looksLikeStructuralDialogTargetTestId(payload.testId, payload.dialogTestId))
-    return undefined;
-  if (payload.testId)
-    return `${root}.getByTestId(${stringLiteral(payload.testId)})`;
   const payloadRole = payload.role || step.target?.role || step.context?.before.target?.role;
   const role = dialog.type === 'popover' && payloadRole === 'tooltip' ? 'button' : payloadRole || 'button';
   const name = payload.name || payload.text || targetNameForLocator(step);
+  if (payload.testId && looksLikeStructuralDialogTargetTestId(payload.testId, payload.dialogTestId))
+    return name ? `page.getByTestId(${stringLiteral(payload.testId)}).last().getByRole(${stringLiteral(role)}, ${roleNameOptionsSource(step, role, name)})` : undefined;
+  if (payload.testId)
+    return `${root}.getByTestId(${stringLiteral(payload.testId)})`;
   return name ? `${root}.getByRole(${stringLiteral(role)}, ${roleNameOptionsSource(step, role, name)})` : undefined;
 }
 
@@ -2189,6 +2196,8 @@ function normalizeRequiredLabel(label: string) {
 function dialogRootLocator(dialog?: FlowDialogScope) {
   if (dialog?.testId)
     return `page.getByTestId(${stringLiteral(dialog.testId)})`;
+  if (dialog?.title && isPersistentDialog(dialog))
+    return `page.locator(${stringLiteral(visibleDialogRootSelector(dialog))}).filter({ hasText: ${stringLiteral(dialog.title)} }).last()`;
   if (dialog?.title)
     return `page.locator(${stringLiteral(dialogRootSelector(dialog))}).filter({ hasText: ${stringLiteral(dialog.title)} })`;
   return 'page';
@@ -2546,15 +2555,37 @@ function dialogScopedLocator(step: FlowStep) {
     return undefined;
   const role = dialog.type === 'popover' && step.target?.role === 'tooltip' ? 'button' : step.target?.role || 'button';
   const nameOptions = roleNameOptionsSource(step, role, targetName);
+  const structuralDialogRoot = structuralDialogRootTestIdLocator(step, dialog);
+  if (structuralDialogRoot)
+    return `${structuralDialogRoot}.getByRole(${stringLiteral(role)}, ${nameOptions})`;
   if (dialog.testId)
     return `page.getByTestId(${stringLiteral(dialog.testId)}).getByRole(${stringLiteral(role)}, ${nameOptions})`;
   if (dialog.type === 'popover')
     return `page.locator(${stringLiteral(dialogRootSelector(dialog))}).last().getByRole(${stringLiteral(role)}, ${nameOptions})`;
   if (!dialog.title)
     return undefined;
-  return `page.locator(${stringLiteral(dialogRootSelector(dialog))})` +
+  return `page.locator(${stringLiteral(visibleDialogRootSelector(dialog))})` +
     `.filter({ hasText: ${stringLiteral(dialog.title)} })` +
+    `.last()` +
     `.getByRole(${stringLiteral(role)}, ${nameOptions})`;
+}
+
+function structuralDialogRootTestIdLocator(step: FlowStep, dialog?: FlowDialogScope) {
+  if (!isPersistentDialog(dialog))
+    return undefined;
+  const testId = step.target?.testId || rawUiTargetTestId(step.target?.raw) || step.context?.before.ui?.targetTestId || '';
+  if (!testId)
+    return undefined;
+  if (!looksLikeStructuralDialogTargetTestId(testId, dialog?.testId, { isDialogOpener: isDialogOpenerTestIdClick(step, testId) }))
+    return undefined;
+  return `page.getByTestId(${stringLiteral(testId)}).last()`;
+}
+
+function rawUiTargetTestId(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object')
+    return undefined;
+  const ui = (raw as { ui?: { targetTestId?: unknown } }).ui;
+  return typeof ui?.targetTestId === 'string' ? ui.targetTestId : undefined;
 }
 
 function dialogRootSelector(dialog?: FlowDialogScope) {
@@ -2565,6 +2596,12 @@ function dialogRootSelector(dialog?: FlowDialogScope) {
   if (dialog?.type === 'drawer')
     return '.ant-drawer, [role="dialog"]';
   return '.ant-modal, .ant-drawer, [role="dialog"]';
+}
+
+function visibleDialogRootSelector(dialog?: FlowDialogScope) {
+  if (dialog?.type === 'drawer')
+    return '.ant-drawer:not(.ant-drawer-hidden):visible, [role="dialog"]:visible';
+  return '.ant-modal:not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active):visible, .ant-drawer:not(.ant-drawer-hidden):visible, [role="dialog"]:visible';
 }
 
 function popconfirmRootSelector() {
