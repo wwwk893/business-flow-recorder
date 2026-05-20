@@ -504,7 +504,8 @@ test('records an IPv4 address pool ProFormSelect WAN flow and replays generated 
   await page.getByTestId('site-save-button').click();
   await expect(page.getByText('配置已保存')).toBeVisible();
 
-  await expect.poll(() => recorderPage.locator('.flow-step').count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(8);
+  // Form label normalization lets the WAN trigger/search/option collapse into one select business step.
+  await expect.poll(() => recorderPage.locator('.flow-step').count(), { timeout: 25_000 }).toBeGreaterThanOrEqual(7);
   const stepSubjects = async () => (await recorderPage.locator('.flow-step-subject').allInnerTexts()).join('\n');
   await expect.poll(stepSubjects).toContain('site-ip-address-pool-create-button');
   await expect.poll(stepSubjects).toContain('test1');
@@ -517,7 +518,8 @@ test('records an IPv4 address pool ProFormSelect WAN flow and replays generated 
 
   let flow = await exportBusinessFlowJson(recorderPage);
   expect(flow.flow.name).toBe('地址池');
-  expect(flow.steps.length).toBeGreaterThanOrEqual(8);
+  // Form label normalization lets the WAN trigger/search/option collapse into one select business step.
+  expect(flow.steps.length).toBeGreaterThanOrEqual(7);
   expect(flow.steps.some((step: any) => step.target?.testId === 'site-ip-address-pool-create-button')).toBeTruthy();
   expect(flow.steps.some((step: any) => [step.target?.label, step.target?.displayName, step.target?.name, step.target?.text].some(value => /WAN口|选择一个WAN口|xtest16:WAN1/.test(String(value || ''))))).toBeTruthy();
 

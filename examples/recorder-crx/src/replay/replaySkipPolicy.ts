@@ -13,6 +13,7 @@ export interface ReplayDropdownDedupeState {
 }
 
 export interface ReplaySkipPolicyHooks {
+  stepOpensPersistentDialog(step: FlowStep): boolean;
   isPlaceholderSelectOptionClick(step: FlowStep): boolean;
   nextEffectiveStepForRedundantAction(steps: FlowStep[], index: number, mode: ReplaySkipMode): FlowStep | undefined;
   isIntermediateSameFieldFill(step: FlowStep, steps: FlowStep[], index: number): boolean;
@@ -21,6 +22,7 @@ export interface ReplaySkipPolicyHooks {
   isRedundantParserSafeSelectFieldAction(step: FlowStep, nextStep?: FlowStep): boolean;
   isRedundantSelectSearchClear(step: FlowStep, previousStep?: FlowStep): boolean;
   isRedundantDropdownEscape(step: FlowStep, previousStep?: FlowStep): boolean;
+  isRedundantSelectPlaceholderDisplayClick(step: FlowStep, previousEmittedStep?: FlowStep, nextEffectiveStep?: FlowStep): boolean;
   isRedundantExplicitPopoverConfirmStep(step: FlowStep, previous?: FlowStep): boolean;
   isRedundantExplicitDialogConfirmStep(step: FlowStep, previous?: FlowStep): boolean;
   isHiddenDialogContainerClickAfterConfirm(step: FlowStep, previous?: FlowStep): boolean;
@@ -53,6 +55,8 @@ export function createReplaySkipPolicy(mode: ReplaySkipMode, hooks: ReplaySkipPo
     },
 
     shouldSkipTopLevelStep(context: TopLevelReplaySkipContext) {
+      if (hooks.stepOpensPersistentDialog(context.step))
+        return false;
       if (shouldSkipCommonStep(context, mode, hooks))
         return true;
       if (hooks.isDuplicateSyntheticEchoClick(context.step, context.steps[context.index - 1]))
@@ -71,11 +75,15 @@ function shouldSkipCommonStep(context: RepeatReplaySkipContext, mode: ReplaySkip
   const previousStep = steps[index - 1];
   const nextStep = steps[index + 1];
   const nextEffectiveStep = hooks.nextEffectiveStepForRedundantAction(steps, index, mode);
+  if (hooks.stepOpensPersistentDialog(step))
+    return false;
   if (hooks.isIntermediateSameFieldFill(step, steps, index) || hooks.isPlaceholderSelectOptionClick(step))
     return true;
   if (hooks.isRedundantFieldFocusClick(step, nextStep) || isRedundantSelectFieldAction(step, nextEffectiveStep, mode, hooks))
     return true;
   if (hooks.isRedundantSelectSearchClear(step, previousStep) || hooks.isRedundantDropdownEscape(step, previousStep))
+    return true;
+  if (hooks.isRedundantSelectPlaceholderDisplayClick(step, previousEmittedStep, nextEffectiveStep))
     return true;
   if (hooks.isTruncatedSelectedValueDisplayEchoClick(step, previousEmittedStep))
     return true;
@@ -91,6 +99,8 @@ function shouldSkipRepeatStep(context: RepeatReplaySkipContext, mode: ReplaySkip
   const previousStep = steps[index - 1];
   const nextStep = steps[index + 1];
   const nextEffectiveStep = hooks.nextEffectiveStepForRedundantAction(steps, index, mode);
+  if (hooks.stepOpensPersistentDialog(step))
+    return false;
   if (context.skipPlaceholderSelectOption && hooks.isPlaceholderSelectOptionClick(step))
     return true;
   if (hooks.isIntermediateSameFieldFill(step, steps, index))
@@ -98,6 +108,8 @@ function shouldSkipRepeatStep(context: RepeatReplaySkipContext, mode: ReplaySkip
   if (hooks.isRedundantFieldFocusClick(step, nextStep) || isRedundantSelectFieldAction(step, nextEffectiveStep, mode, hooks))
     return true;
   if (hooks.isRedundantSelectSearchClear(step, previousStep))
+    return true;
+  if (hooks.isRedundantSelectPlaceholderDisplayClick(step, previousEmittedStep, nextEffectiveStep))
     return true;
   if (hooks.isRedundantExplicitPopoverConfirmStep(step, previousStep) ||
     hooks.isRedundantExplicitPopoverConfirmStep(step, previousEmittedStep) ||

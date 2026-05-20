@@ -112,7 +112,7 @@ function criticalFallbackFindings(recipe: UiActionRecipe, step: FlowStep, impact
   if (impact !== 'critical')
     return [];
   const primary = recipe.locatorContract?.primaryDiagnostic || recipe.locatorContract?.primary;
-  if (!primary) {
+  if (!primary && !testIdEvidence(recipe, step)) {
     return [{
       severity: 'critical',
       code: 'critical-action-without-locator-contract',
@@ -232,6 +232,11 @@ function modalRootChecks(recipe: UiActionRecipe, step: FlowStep): SafetyPrefligh
   const dialog = step.target?.scope?.dialog || step.context?.before.dialog || recipe.target?.dialog as { title?: string; type?: string; testId?: string; visible?: boolean } | undefined;
   if (!dialog || dialog.type === 'popover' || dialog.type === 'dropdown' || dialog.visible === false)
     return [];
+  const evidenceTestId = testIdEvidence(recipe, step);
+  if (evidenceTestId && !(sameDialogScope(step.context?.before.dialog, dialog) && looksLikeStructuralDialogTestId(evidenceTestId)) && looksLikeDialogOpenerStep(recipe, step, dialog))
+    return [];
+  if (stepOpensPersistentDialog(recipe, step, dialog))
+    return [];
   return [{
     kind: 'visible-modal-root-count',
     timing: 'before-action',
@@ -241,11 +246,87 @@ function modalRootChecks(recipe: UiActionRecipe, step: FlowStep): SafetyPrefligh
   }];
 }
 
+function testIdEvidence(recipe: UiActionRecipe, step: FlowStep) {
+  return step.target?.testId ||
+    step.context?.before.target?.testId ||
+    recipe.target?.testId ||
+    testIdFromSource(step.sourceCode) ||
+    testIdFromSource(JSON.stringify(step.rawAction)) ||
+    testIdFromSource(JSON.stringify(step.target?.raw)) ||
+    testIdFromSource((step.target?.raw as { selector?: string } | undefined)?.selector) ||
+    testIdFromTargetText(step.target?.displayName) ||
+    testIdFromTargetText(step.target?.name) ||
+    testIdFromTargetText(step.target?.text) ||
+    '';
+}
+
+function looksLikeStructuralDialogTestId(testId: string) {
+  return /(^|[-_])(modal|dialog|drawer|form|container|wrapper|root)([-_]|$)/i.test(testId);
+}
+
+function stepOpensPersistentDialog(recipe: UiActionRecipe, step: FlowStep, dialog: { title?: string; type?: string; testId?: string; visible?: boolean }) {
+  const before = step.context?.before.dialog;
+  const opened = step.context?.after?.openedDialog || step.context?.after?.dialog || step.target?.scope?.dialog;
+  if (!isPersistentDialog(opened) || !sameDialogScope(opened, dialog) || sameDialogScope(before, dialog))
+    return false;
+  if (isPersistentDialog(before))
+    return true;
+  return looksLikeDialogOpenerStep(recipe, step, dialog);
+}
+
+function isPersistentDialog(dialog?: { title?: string; type?: string; testId?: string; visible?: boolean }) {
+  return !!dialog && dialog.visible !== false && (dialog.type === 'modal' || dialog.type === 'drawer' || (!dialog.type && !!(dialog.title || dialog.testId)));
+}
+
+function sameDialogScope(left?: { title?: string; type?: string; testId?: string }, right?: { title?: string; type?: string; testId?: string }) {
+  if (!left || !right)
+    return false;
+  if (left.testId && right.testId)
+    return left.testId === right.testId;
+  if (!left.title || !right.title || left.title !== right.title)
+    return false;
+  return !left.type || !right.type || left.type === right.type;
+}
+
+function looksLikeDialogOpenerStep(recipe: UiActionRecipe, step: FlowStep, dialog: { title?: string }) {
+  const testId = testIdEvidence(recipe, step);
+  const label = normalizedCriticalText([
+    step.target?.name,
+    step.target?.text,
+    step.target?.displayName,
+    step.context?.before.target?.text,
+    step.context?.before.target?.normalizedText,
+    recipe.targetText,
+  ].filter(Boolean).join(' '));
+  const hint = `${testId} ${label}`;
+  const dialogTitle = normalizedCriticalText(dialog.title || '');
+  return /(?:^|[-_\s])(create|new|add|open|edit)(?:[-_\s]|$)|新建|新增|创建|添加|打开|编辑/i.test(hint) ||
+    (!!label && !!dialogTitle && (dialogTitle.includes(label) || label.includes(dialogTitle)));
+}
+
+function testIdFromSource(source?: string) {
+  if (!source)
+    return undefined;
+  const normalized = source.replace(/\\(["'])/g, '$1');
+  return normalized.match(/getByTestId\(["']([^"']+)["']\)/)?.[1] ||
+    normalized.match(/internal:testid=\[data-testid=["']([^"']+)/)?.[1] ||
+    normalized.match(/data-testid=["']([^"']+)["']/)?.[1] ||
+    normalized.match(/\[data-testid=["']([^"']+)/)?.[1];
+}
+
+function testIdFromTargetText(value?: string) {
+  const match = value?.replace(/\s+/g, ' ').trim().match(/^testId\s+([A-Za-z0-9_-]+)$/i);
+  return match?.[1];
+}
+
 function popconfirmRootChecks(recipe: UiActionRecipe, step: FlowStep, impact: SafetyGuardImpact): SafetyPreflightCheck[] {
   const dialog = step.target?.scope?.dialog || step.context?.before.dialog || recipe.target?.dialog as { title?: string; type?: string; visible?: boolean } | undefined;
   const opened = step.context?.after?.openedDialog || step.context?.after?.dialog;
   const beforeExplicitConfirm = recipe.operation === 'confirm' || recipe.component === 'PopconfirmButton' || dialog?.type === 'popover';
   const afterDeleteOpener = impact === 'critical' && opened?.type === 'popover';
+  const opensPersistentDialog = isPersistentDialog(opened) && !sameDialogScope(step.context?.before.dialog, opened);
+  if (opensPersistentDialog && step.context?.before.dialog?.type !== 'popover')
+    return [];
   if (!beforeExplicitConfirm && !afterDeleteOpener)
     return [];
   return [{
