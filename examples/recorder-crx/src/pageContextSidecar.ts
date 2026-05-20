@@ -30,6 +30,17 @@ const maxAncestorDepth = 10;
 const maxNearbyText = 8;
 const maxTextLength = 60;
 const sensitivePattern = /(password|passwd|pwd|token|cookie|authorization|auth|secret|session)/i;
+const decorativeLabelDescendantSelector = [
+  '.anticon',
+  '.icon',
+  '.ant-form-item-tooltip',
+  '[class*="icon"]',
+  '[class*="Icon"]',
+  '[data-icon]',
+  '[aria-hidden="true"]',
+  '[role="img"]',
+  'svg',
+].join(', ');
 const semanticAncestorAttributeNames = [
   'data-device-role',
   'data-role',
@@ -712,15 +723,15 @@ function collectForm(target: Element, anchor = actionAnchorForElement(target)) {
 }
 
 function formItemLabel(item: Element, anchor: Element) {
-  const explicit = textFromFirst('.ant-form-item-label label, label', item);
+  const explicit = labelElementText(item.querySelector('.ant-form-item-label label, label'));
   if (explicit)
     return explicit;
   if (item.tagName.toLowerCase() === 'label') {
-    const labelText = elementText(item);
+    const labelText = labelElementText(item);
     const anchorText = elementText(anchor);
     if (labelText && labelText !== anchorText)
       return labelText;
-    return labelText || anchorText;
+    return normalizeFormLabelText(labelText || anchorText);
   }
   return undefined;
 }
@@ -880,6 +891,21 @@ function normalizeText(value?: string) {
   return value?.replace(/\s+/g, ' ').trim();
 }
 
+function labelElementText(element?: Element | null) {
+  if (!element)
+    return undefined;
+  const clone = element.cloneNode(true) as Element;
+  clone.querySelectorAll(decorativeLabelDescendantSelector).forEach(child => child.remove());
+  return normalizeFormLabelText((clone as HTMLElement).innerText || clone.textContent || undefined);
+}
+
+function normalizeFormLabelText(value?: string) {
+  return value
+      ?.replace(/^\s*[*＊]\s*/, '')
+      .replace(/\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+)*$/i, '')
+      .trim() || undefined;
+}
+
 function testIdOf(element: Element) {
   return safeText(element.getAttribute('data-testid') || element.getAttribute('data-test-id') || element.getAttribute('data-e2e') || undefined);
 }
@@ -917,7 +943,7 @@ function labelFromAria(element: Element) {
   const labelledBy = element.getAttribute('aria-labelledby');
   if (!labelledBy)
     return undefined;
-  return labelledBy.split(/\s+/).map(id => element.ownerDocument.getElementById(id)).map(element => elementText(element)).find(Boolean);
+  return labelledBy.split(/\s+/).map(id => element.ownerDocument.getElementById(id)).map(element => labelElementText(element)).find(Boolean);
 }
 
 function labelFromPlaceholder(anchor: Element) {

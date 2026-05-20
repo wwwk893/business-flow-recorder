@@ -77,6 +77,8 @@ type FlowDialogScope = NonNullable<NonNullable<NonNullable<FlowStep['target']>['
 type FlowTableScope = NonNullable<NonNullable<FlowStep['target']>['scope']>['table'];
 type FlowAncestorScope = NonNullable<NonNullable<NonNullable<FlowStep['target']>['scope']>['ancestor']>;
 
+const trailingDecorativeIconNamePattern = /\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+)*$/i;
+
 const effectiveReplayFlowHooks: EffectiveReplayFlowHooks = {
   choiceControlText,
   stepSynthesizesPopoverConfirm,
@@ -257,10 +259,7 @@ function selectStepFormContext(step: FlowStep) {
 }
 
 function popupFieldLabelFromName(value?: string) {
-  const text = value
-      ?.replace(/^[*＊]\s*/, '')
-      .replace(/\s*question-circle\b.*$/i, '')
-      .trim();
+  const text = normalizeRequiredLabel(value || '');
   if (!text)
     return undefined;
   if (/选择|select|范围|路径|角色|类型|标签|分类|名称|端口|地址|WAN口|LAN口/i.test(text))
@@ -894,9 +893,12 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
   if (isRedundantSelectedValueDisplayClick(step, options.previousStep))
     return undefined;
   const sourceCode = normalizeActionSource(step.sourceCode);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
+  if (isBroadLabelOnlyClick(step))
+    return undefined;
+  const shouldRegenerateSource = !!sourceCode && shouldRegenerateDecoratedFieldSource(step);
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
   const contractSource = contractPrimarySourceForStep(step, options);
   if (contractSource) {
@@ -908,9 +910,59 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
     const fallbackSource = normalizeActionSource(fallback);
     return fallbackSource ? appendSyntheticFollowUpSource(fallbackSource, step, options) : fallbackSource;
   }
-  if (sourceCode && sourceMatchesStep(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
-  return sourceCode;
+  return shouldRegenerateSource ? undefined : sourceCode;
+}
+
+function shouldRegenerateDecoratedFieldSource(step: FlowStep) {
+  if (!hasDecorativeFieldLabelSuffix(step))
+    return false;
+  if (!/^(click|fill|press)$/.test(step.action))
+    return false;
+  return !!fieldLocator(step);
+}
+
+function hasDecorativeFieldLabelSuffix(step: FlowStep) {
+  return [
+    step.target?.name,
+    step.target?.text,
+    step.target?.displayName,
+    step.target?.label,
+    step.target?.scope?.form?.label,
+    step.context?.before.form?.label,
+    step.context?.before.ui?.form?.label,
+  ].some(labelHasTrailingDecorativeIconName);
+}
+
+function labelHasTrailingDecorativeIconName(label?: string) {
+  return !!label && trailingDecorativeIconNamePattern.test(label.replace(/^\s*[*＊]\s*/, '').trim());
+}
+
+function isBroadLabelOnlyClick(step: FlowStep) {
+  if (step.action !== 'click')
+    return false;
+  const testId = step.target?.testId ||
+    step.context?.before.target?.testId ||
+    testIdFromSource(JSON.stringify(rawAction(step.rawAction))) ||
+    testIdFromSource(step.sourceCode || '');
+  if (testId)
+    return false;
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  if (/^(button|link|checkbox|radio|switch|combobox|option|menuitem|tab)$/i.test(role) ||
+      /^(button|checkbox|radio|switch|select|tree-select|cascader|select-option|tree-select-option|cascader-option|input|textarea|upload|tab)$/i.test(controlType))
+    return false;
+  const selectorSource = [
+    rawAction(step.rawAction).selector,
+    step.target?.selector,
+    step.target?.locator,
+    step.sourceCode,
+  ].filter(Boolean).join('\n');
+  if (!/internal:label|getByLabel\(/.test(selectorSource))
+    return false;
+  const text = normalizeGeneratedText(targetNameForLocator(step) || step.target?.label || step.context?.before.target?.text || step.context?.before.target?.normalizedText || '') || '';
+  return text.length > 32 && text.split(/\s+/).filter(Boolean).length >= 3;
 }
 
 function contractPrimarySourceForStep(step: FlowStep, options: EmitStepOptions = {}) {
@@ -2196,7 +2248,10 @@ function formItemSearchText(label: string) {
 }
 
 function normalizeRequiredLabel(label: string) {
-  return label.replace(/^\s*\*\s*/, '').trim();
+  return label
+      .replace(/^\s*[*＊]\s*/, '')
+      .replace(trailingDecorativeIconNamePattern, '')
+      .trim();
 }
 
 function dialogRootLocator(dialog?: FlowDialogScope) {

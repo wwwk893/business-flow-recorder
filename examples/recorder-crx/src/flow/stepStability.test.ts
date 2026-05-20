@@ -8695,6 +8695,50 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'code preview suppresses broad label-only recorder clicks before concrete controls',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          sourceActionIds: ['a001'],
+          action: 'click',
+          target: {
+            name: '增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除',
+            displayName: '增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除',
+          },
+          rawAction: {
+            action: {
+              name: 'click',
+              selector: 'internal:label="增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除"i',
+            },
+          },
+          sourceCode: `await page.getByLabel("增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除").click();`,
+          assertions: [],
+        }, {
+          id: 's002',
+          order: 2,
+          kind: 'recorded',
+          sourceActionIds: ['a002'],
+          action: 'click',
+          target: {
+            testId: 'wan-transport-add-button',
+            text: '增加传输网络',
+          },
+          rawAction: testIdClickAction('wan-transport-add-button'),
+          assertions: [],
+        }],
+      };
+
+      const code = generateBusinessFlowPlaybackCode(flow);
+      assert(code.includes('s001 has no runnable Playwright action source'), 'broad label-only clicks should be documented but not replayed');
+      assert(!code.includes('getByLabel("增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除")'), 'broad page label should not become a runnable locator');
+      assert(code.includes('getByTestId("wan-transport-add-button").click'), 'the following concrete button click should still be replayed');
+    },
+  },
+  {
     name: 'code preview suppresses non-interactive heading clicks',
     run: () => {
       const flow: BusinessFlow = {
@@ -11090,6 +11134,46 @@ test('demo', async ({ page }) => {
       assert(executableStepCode.includes('locator(".ant-form-item").filter({ hasText: "IP地址池" }).locator(".ant-select-selector, .ant-cascader-picker, .ant-select").first().click();'), 'tooltip suffix should be stripped before locating the ProFormSelect trigger');
       assert(!executableStepCode.includes('question-circle'), 'runtime trigger should not depend on tooltip text');
       assert(!executableStepCode.includes('getByRole("combobox"') && !executableStepCode.includes('getByRole(\'combobox\''), 'runtime trigger should not use the brittle combobox role');
+    },
+  },
+  {
+    name: 'AntD text input with tooltip suffix uses normalized field label',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          sourceActionIds: ['a001'],
+          action: 'fill',
+          value: 'test1',
+          target: {
+            role: 'textbox',
+            name: '* 策略名称 form-help-outlined',
+            displayName: '* 策略名称 form-help-outlined',
+          },
+          rawAction: {
+            action: {
+              name: 'fill',
+              selector: 'internal:role=textbox[name="* 策略名称 form-help-outlined"i]',
+              text: 'test1',
+            },
+          },
+          sourceCode: `await page.getByRole("textbox", { name: "* 策略名称 form-help-outlined" }).fill("test1");`,
+          assertions: [],
+        }],
+      };
+
+      const exportedCode = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      for (const code of [exportedCode, playbackCode]) {
+        const firstStep = stepCodeBlock(code, 's001');
+        const executableStepCode = firstStep.split('\n').slice(1).join('\n');
+        assert(executableStepCode.includes('getByLabel("策略名称").fill("test1");'), 'tooltip suffix should be stripped before locating the text input');
+        assert(!executableStepCode.includes('form-help-outlined'), 'text input replay should not depend on tooltip text');
+        assert(!executableStepCode.includes('getByRole("textbox"') && !executableStepCode.includes('getByRole(\'textbox\''), 'text input replay should not preserve the brittle textbox role source');
+      }
     },
   },
   {
