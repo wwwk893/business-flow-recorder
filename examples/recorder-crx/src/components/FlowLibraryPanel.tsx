@@ -143,7 +143,7 @@ export const FlowLibraryPanel: React.FC<{
       </div>
     </div>
 
-    <div className='library-section section'>
+    <div className='library-section section library-ai-section'>
       <GlobalAiIntentCard
         settings={aiSettings}
         profiles={aiProfiles}
@@ -239,33 +239,24 @@ const FlowRecordCard: React.FC<{
   onDelete: () => void;
 }> = ({ flow, selected, onOpen, onEdit, onDuplicate, onDelete }) => {
   const stats = flowStats(flow);
-  const done = stats.stepCount > 0 && stats.missingAssertionCount === 0;
   const highPriority = flow.flow.priority === 'P0' || flow.flow.priority === 'P1';
+  const version = versionState(flow, stats);
 
   return <article className={selected ? 'library-card record-card selected' : 'library-card record-card'}>
     <div className='record-card-head library-card-title'>
       <div>
         <strong className='record-title'>{flow.flow.name || '未命名业务流程'}</strong>
-        <span>更新于 {formatDateTime(flow.updatedAt)}</span>
+        <span>business-flow/v1 · {stats.stepCount} 步骤 · 更新于 {formatDateTime(flow.updatedAt)}</span>
       </div>
       <div className='record-badges'>
         {highPriority && <span className='priority-badge pill warn'>高优先级</span>}
-        <span className={done ? 'status-badge pill ok' : 'status-badge pill'}>{done ? '已完成' : '草稿'}</span>
+        <span className={version.className}>{version.label}</span>
       </div>
     </div>
 
-    <div className='record-focus' aria-label='流程关键字段'>
-      <Metric label='步骤' value={String(stats.stepCount)} />
-      <Metric label='断言' value={String(stats.assertionCount)} />
-      <Metric label='角色' value={flow.flow.role || '--'} />
-      <Metric label='更新' value={formatTime(flow.updatedAt)} />
-    </div>
-
-    <div className='record-meta-grid library-card-meta' aria-label='流程更多字段'>
-      <Meta label='应用' value={flow.flow.app || '未填写'} />
-      <Meta label='仓库' value={flow.flow.repo || '未关联'} />
-      <Meta label='模块' value={flow.flow.module || '未分组'} />
-      <Meta label='标签' value={<TagList tags={flow.flow.tags} />} />
+    <div className='record-status-line'>
+      <span>{recentStatus(flow, stats)}</span>
+      <span>{[flow.flow.app, flow.flow.module, flow.flow.role].filter(Boolean).join(' · ') || '未填写业务上下文'}</span>
     </div>
 
     <div className='record-actions library-card-actions'>
@@ -275,30 +266,6 @@ const FlowRecordCard: React.FC<{
       <button type='button' className='mini-button danger danger-button' onClick={onDelete}>删除</button>
     </div>
   </article>;
-};
-
-const Metric: React.FC<{
-  label: string;
-  value: React.ReactNode;
-}> = ({ label, value }) => <div>
-  <span>{label}</span>
-  <strong>{value}</strong>
-</div>;
-
-const Meta: React.FC<{
-  label: string;
-  value?: React.ReactNode;
-}> = ({ label, value }) => <div className='library-meta-row'>
-  <span>{label}</span>
-  <strong>{value || '--'}</strong>
-</div>;
-
-const TagList: React.FC<{
-  tags?: string[];
-}> = ({ tags }) => {
-  if (!tags?.length)
-    return <>--</>;
-  return <span className='library-tags'>{tags.slice(0, 2).map(tag => <em key={tag}>{tag}</em>)}</span>;
 };
 
 function matchesFilter(flow: BusinessFlow, filter: FlowLibraryFilter) {
@@ -312,16 +279,27 @@ function matchesFilter(flow: BusinessFlow, filter: FlowLibraryFilter) {
   return true;
 }
 
+function versionState(flow: BusinessFlow, stats: ReturnType<typeof flowStats>) {
+  if (!stats.stepCount)
+    return { label: '未录制', className: 'status-badge pill' };
+  if (stats.missingAssertionCount)
+    return { label: `${stats.missingAssertionCount} 个待补`, className: 'status-badge pill warn' };
+  if (flow.steps.some(step => step.artifacts?.aiAssist))
+    return { label: '推荐版本', className: 'status-badge pill ok' };
+  return { label: '可回放', className: 'status-badge pill ok' };
+}
+
+function recentStatus(flow: BusinessFlow, stats: ReturnType<typeof flowStats>) {
+  if (!stats.stepCount)
+    return '还没有录制步骤，可以进入流程后开始录制。';
+  if (stats.missingAssertionCount)
+    return `已有 ${stats.stepCount} 个步骤，仍有 ${stats.missingAssertionCount} 个步骤缺少断言。`;
+  return `已有 ${stats.stepCount} 个步骤和 ${stats.assertionCount} 个断言，可进入回放验证。`;
+}
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime()))
     return value;
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
-}
-
-function formatTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime()))
-    return '--';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }

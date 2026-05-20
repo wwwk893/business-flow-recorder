@@ -48,9 +48,10 @@ export const FlowReviewPanel: React.FC<{
   onApplyAiReviewPatch?: () => void;
   onAiRepairAndRetry?: () => void;
   onRollbackAiRepair?: () => void;
+  onRestoreAiOriginal?: () => void;
   showAiRepairButton?: boolean;
   showStepToolbar?: boolean;
-}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, aiAssistReview, aiAssistRepair, onRunAiReview, onApplyAiReviewPatch, onAiRepairAndRetry, onRollbackAiRepair, showAiRepairButton = true, showStepToolbar = true }) => {
+}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, aiAssistReview, aiAssistRepair, onRunAiReview, onApplyAiReviewPatch, onAiRepairAndRetry, onRollbackAiRepair, onRestoreAiOriginal, showAiRepairButton = true, showStepToolbar = true }) => {
   const stats = flowStats(flow);
   const repeatStats = repeatSegmentStats(flow);
   const [activeInsertStepId, setActiveInsertStepId] = React.useState<string>();
@@ -157,6 +158,8 @@ export const FlowReviewPanel: React.FC<{
       onApplyReviewPatch={onApplyAiReviewPatch}
       onRepairAndRetry={onAiRepairAndRetry}
       onRollbackRepair={onRollbackAiRepair}
+      onOpenReplay={onOpenReplayCode}
+      onRestoreOriginal={onRestoreAiOriginal}
       showRepairButton={showAiRepairButton}
     />}
     {mode === 'steps' && <>

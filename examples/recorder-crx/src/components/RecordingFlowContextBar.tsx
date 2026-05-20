@@ -21,9 +21,10 @@ export const RecordingFlowContextBar: React.FC<{
   isRecording: boolean;
   aiIntentEnabled: boolean;
   aiIntentModeLabel: string;
+  aiAssistReviewEnabled?: boolean;
   nextStepLabel: string;
   insertAfterStepLabel?: string;
-}> = ({ flow, isRecording, aiIntentEnabled, aiIntentModeLabel, nextStepLabel, insertAfterStepLabel }) => {
+}> = ({ flow, isRecording, aiIntentEnabled, aiIntentModeLabel, aiAssistReviewEnabled, nextStepLabel, insertAfterStepLabel }) => {
   const flowName = flow.flow.name.trim() || '未命名业务流程';
   const modulePage = [flow.flow.module, flow.flow.page].filter(Boolean).join(' / ');
   const recordingTarget = modulePage || flow.flow.page || flow.flow.module || flowName;
@@ -32,7 +33,7 @@ export const RecordingFlowContextBar: React.FC<{
     <section className='recording-banner recording-context-card' aria-label='录制绑定状态'>
       <div>
         <strong>{isRecording ? '正在录制' : '步骤检查'}：{flowName}</strong>
-        <span>{isRecording ? `记录将追加到 ${insertAfterStepLabel || nextStepLabel}，不是全局录制。` : '当前没有启动录制，可以检查步骤、保存记录，或从任意位置继续录制。'}</span>
+        <span>{isRecording ? `记录将追加到 ${insertAfterStepLabel || nextStepLabel}，不是全局录制。` : '当前没有启动录制，可以检查步骤、保存原始规则版，或从任意位置继续录制。'}</span>
       </div>
       <span className={isRecording ? 'pill warn' : 'pill ok'}>{isRecording ? '录制绑定' : '未录制'}</span>
     </section>
@@ -47,7 +48,10 @@ export const RecordingFlowContextBar: React.FC<{
           </React.Fragment>)}
         </div>
       </div>
-      <span className={aiIntentEnabled ? 'pill ok' : 'pill warn'}>AI Intent：{aiIntentEnabled ? aiIntentModeLabel : '未启用'}</span>
+      <div className='flow-summary-pills'>
+        <span className={aiIntentEnabled ? 'pill ok' : 'pill warn'}>AI Intent：{aiIntentEnabled ? aiIntentModeLabel : '未启用'}</span>
+        <span className={aiAssistReviewEnabled ? 'pill ok' : 'pill'}>{aiAssistReviewEnabled ? '自动优化准备就绪' : '原始规则版'}</span>
+      </div>
     </section>
 
     {insertAfterStepLabel && <div className='recording-context-insert-note'>当前为插入录制：新操作会优先接在 {insertAfterStepLabel} 后，仍然绑定当前流程。</div>}

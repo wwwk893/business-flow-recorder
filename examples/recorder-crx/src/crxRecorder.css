@@ -5306,3 +5306,98 @@
   -webkit-line-clamp: 3;
   word-break: break-all;
 }
+
+.side-panel-nav.library-nav {
+  grid-template-columns: 1fr 1fr;
+}
+
+.side-panel-nav.workspace-nav {
+  grid-template-columns: 1.05fr repeat(5, minmax(0, 1fr));
+}
+
+.library-ai-section {
+  display: grid;
+  gap: 10px;
+}
+
+.record-status-line {
+  display: grid;
+  gap: 3px;
+  color: var(--bf-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.record-status-line span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-card.record-card {
+  gap: 10px;
+}
+
+.record-actions.library-card-actions {
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+}
+
+.flow-summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.recording-ai-hint {
+  margin: 6px 16px 0;
+  border: 1px solid color-mix(in oklab, var(--bf-success), white 72%);
+  border-radius: 8px;
+  padding: 9px 11px;
+  background: color-mix(in oklab, var(--bf-success-soft), white 24%);
+  color: #166534;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-assist-card .version-actions-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.ai-assist-card .version-actions-row button {
+  min-height: 32px;
+}
+
+.developer-details {
+  border: 1px solid var(--bf-border);
+  border-radius: 8px;
+  background: var(--bf-surface-subtle);
+}
+
+.developer-details summary {
+  cursor: pointer;
+  padding: 9px 10px;
+  color: var(--bf-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.developer-details div {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.developer-details p {
+  margin: 0;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.developer-details strong {
+  color: var(--bf-fg);
+  font-family: Inconsolata, ui-monospace, monospace;
+}

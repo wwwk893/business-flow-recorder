@@ -215,25 +215,25 @@ export const AiIntentSettingsPanel: React.FC<{
 
     <details className='settings-section'>
       <summary>
-        <span>AI 审查</span>
+        <span>AI 审查与修复</span>
         <em>{crxSettings.aiAssistEnabled ? '已启用' : '未启用'}</em>
       </summary>
       <div className='ai-settings-grid'>
         <label className='checkbox-row'>
           <input type='checkbox' checked={!!crxSettings.aiAssistEnabled} onChange={e => updateCrxSettings({ aiAssistEnabled: e.target.checked })} />
-          启用 AI 审查 / 修复
+          启用 AI 自动优化
         </label>
         <label className='checkbox-row'>
           <input type='checkbox' checked={!!crxSettings.aiAssistReviewOnStopRecording} onChange={e => updateCrxSettings({ aiAssistReviewOnStopRecording: e.target.checked })} />
-          停止录制后自动审查
+          停止录制后自动优化
         </label>
         <label className='checkbox-row'>
           <input type='checkbox' checked={!!crxSettings.aiAssistAutoApplyLowRiskReviewPatch} onChange={e => updateCrxSettings({ aiAssistAutoApplyLowRiskReviewPatch: e.target.checked })} />
-          自动应用低风险 Review patch
+          自动应用低风险推荐版本
         </label>
         <label className='checkbox-row'>
           <input type='checkbox' checked={crxSettings.aiAssistRepairOnFailureButton !== false} onChange={e => updateCrxSettings({ aiAssistRepairOnFailureButton: e.target.checked })} />
-          显示回放失败 AI 修复按钮
+          回放失败时显示 AI 修复并重试
         </label>
         <label>
           Provider kind
@@ -250,7 +250,7 @@ export const AiIntentSettingsPanel: React.FC<{
           允许 Cloud Provider
         </label>
         <label>Max context chars<input type='number' min={4000} value={crxSettings.aiAssistMaxContextChars ?? 28000} onChange={e => updateCrxSettings({ aiAssistMaxContextChars: Number(e.target.value) || 28000 })} /></label>
-        <label>Timeout ms<input type='number' min={1000} value={crxSettings.aiAssistTimeoutMs ?? 60000} onChange={e => updateCrxSettings({ aiAssistTimeoutMs: Number(e.target.value) || 60000 })} /></label>
+        <label>Timeout ms<input type='number' min={1000} max={180000} value={crxSettings.aiAssistTimeoutMs ?? 60000} onChange={e => updateCrxSettings({ aiAssistTimeoutMs: Number(e.target.value) || 60000 })} /></label>
         <label>Retry limit<input type='number' min={0} max={2} value={crxSettings.aiAssistRetryLimit ?? 0} onChange={e => updateCrxSettings({ aiAssistRetryLimit: Number(e.target.value) || 0 })} /></label>
       </div>
       <div className='ai-privacy-note'>AI 审查复用上方 AI Provider 的 Base URL、Model、API Key 和响应模式。上下文会先脱敏，不发送 cookie、storage、完整 DOM、Authorization、API Key 或完整内网 URL。</div>

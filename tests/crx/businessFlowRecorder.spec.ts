@@ -60,7 +60,7 @@ test('shows grouped settings accordion from the flow library', async ({ page, at
 
   await aiReview.locator('summary').click();
   await expect(aiReview).toHaveJSProperty('open', true);
-  await expect(aiReview).toContainText('停止录制后自动审查');
+  await expect(aiReview).toContainText('停止录制后自动优化');
   await expect(aiReview).toContainText('Provider kind');
 });
 

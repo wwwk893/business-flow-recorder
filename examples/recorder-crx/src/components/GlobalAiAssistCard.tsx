@@ -18,8 +18,8 @@ export const GlobalAiAssistCard: React.FC<{
   return <section className='global-ai-card ai-compact-card'>
     <div className='global-ai-title ai-compact-head'>
       <div>
-        <strong>AI 审查全局配置</strong>
-        <span>停止录制审查和回放失败修复共用同一个 Provider。</span>
+        <strong>AI 自动优化</strong>
+        <span>停止后生成推荐版本，回放失败后可自动修复并重试。</span>
       </div>
       <span className='pill'>AI</span>
     </div>
@@ -34,10 +34,10 @@ export const GlobalAiAssistCard: React.FC<{
       </div>
       <div>
         <span>停止后</span>
-        <strong>{reviewOnStop ? '自动审查' : '手动审查'}</strong>
+        <strong>{reviewOnStop ? '自动优化' : '手动优化'}</strong>
       </div>
       <div>
-        <span>修复按钮</span>
+        <span>失败修复</span>
         <strong>{repairButton ? '显示' : '隐藏'}</strong>
       </div>
     </div>

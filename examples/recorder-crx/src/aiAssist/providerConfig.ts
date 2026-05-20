@@ -48,7 +48,7 @@ export function normalizeAiAssistProviderConfig(config?: Partial<AiAssistProvide
     temperature: typeof config?.temperature === 'number' ? config.temperature : defaultAiAssistProviderConfig.temperature,
     maxTokens: clamp(config?.maxTokens ?? defaultAiAssistProviderConfig.maxTokens!, 100, 8000),
     maxContextChars: clamp(config?.maxContextChars ?? defaultAiAssistProviderConfig.maxContextChars, 4000, 120_000),
-    timeoutMs: clamp(config?.timeoutMs ?? defaultAiAssistProviderConfig.timeoutMs, 1000, 120_000),
+    timeoutMs: clamp(config?.timeoutMs ?? defaultAiAssistProviderConfig.timeoutMs, 1000, 180_000),
     retryLimit: clamp(config?.retryLimit ?? defaultAiAssistProviderConfig.retryLimit, 0, 2),
   };
 }

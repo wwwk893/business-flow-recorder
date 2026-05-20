@@ -575,6 +575,7 @@ export const CrxRecorder: React.FC = ({
   const aiAssistLastReviewPatchRef = React.useRef<RecordingReviewPatch>();
   const aiAssistLastReviewContextRef = React.useRef<RecordingReviewContext>();
   const aiAssistLastReviewValidationRef = React.useRef<RecordingReviewValidationResult>();
+  const aiAssistReviewOriginalFlowRef = React.useRef<BusinessFlow>();
   const aiAssistRepairRollbackRef = React.useRef<BusinessFlow>();
   const businessFlowEnabledRef = React.useRef(defaultSettings.businessFlowEnabled !== false);
   const pageContextCaptureActiveRef = React.useRef(false);
@@ -1442,8 +1443,9 @@ export const CrxRecorder: React.FC = ({
   }, [finalizeCurrentRecordingSession]);
 
   const runAiAssistReview = React.useCallback(async (reviewMode: 'stop-recording' | 'manual-review' | 'pre-export' = 'manual-review') => {
-    setAiAssistReview({ status: 'running', message: 'AI 正在审查规则生成回放代码...' });
+    setAiAssistReview({ status: 'running', message: '正在保存原始规则版并生成推荐版本...' });
     const flow = flowDraftRef.current;
+    aiAssistReviewOriginalFlowRef.current = flow;
     const provider = createAiAssistProvider(aiAssistConfig);
     const result = await reviewRecordingWithAiAssist({
       flow,
@@ -1463,7 +1465,7 @@ export const CrxRecorder: React.FC = ({
     }
     setAiAssistReview({
       status: result.error ? 'error' : 'ready',
-      message: result.error || (result.validation?.autoApply ? 'AI 已自动应用低风险 patch。' : 'AI Review 已完成。'),
+      message: result.error || (result.validation?.autoApply ? '推荐版本已生成并应用，可进入回放验证。' : result.validation?.ok ? '推荐版本已生成，等待确认应用。' : 'AI 优化完成，但没有可应用的推荐版本。'),
       patch: result.patch,
       validation: result.validation,
       requestId: result.requestId,
@@ -1492,7 +1494,16 @@ export const CrxRecorder: React.FC = ({
     const nextFlow = validation.appliedFlow as BusinessFlow || applyRecordingReviewPatch(flowDraftRef.current, patch);
     flowDraftRef.current = nextFlow;
     setFlowDraft(nextFlow);
-    setAiAssistReview(review => ({ ...review, status: 'ready', message: 'AI Review patch 已应用。' }));
+    setAiAssistReview(review => ({ ...review, status: 'ready', message: '推荐版本已应用，可进入回放验证。' }));
+  }, []);
+
+  const restoreAiAssistOriginalFlow = React.useCallback(() => {
+    const originalFlow = aiAssistReviewOriginalFlowRef.current;
+    if (!originalFlow)
+      return;
+    flowDraftRef.current = originalFlow;
+    setFlowDraft(originalFlow);
+    setAiAssistReview(review => ({ ...review, status: 'ready', message: '已恢复原始规则版。' }));
   }, []);
 
   const runAiAssistRepairAndRetry = React.useCallback(async () => {
@@ -2150,18 +2161,20 @@ export const CrxRecorder: React.FC = ({
     window.dispatch({ event: 'setMode', params: { mode: nextMode } }).catch(() => {});
   }, [mode, setPageContextCaptureActive]);
 
-  const stopRecording = React.useCallback(async () => {
+  const stopRecording = React.useCallback(async (options?: { aiReview?: boolean }) => {
+    const shouldRunAiReview = options?.aiReview ?? (aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording);
     appendDiagnosticLog({
       type: 'ui.recording-stop',
-      message: '停止录制',
+      message: shouldRunAiReview ? '停止录制并优化' : '停止录制',
       data: {
         pendingInsert: pendingInsertRecordingRef.current,
+        aiReview: shouldRunAiReview,
         stepCount: flowDraft.steps.length,
         recordedActionCount,
       },
     });
     await finalizeCurrentRecordingSession('stop-recording');
-    if (aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording) {
+    if (shouldRunAiReview) {
       setPanelStage('review');
       setActiveTab('business');
       runAiAssistReview('stop-recording').catch(() => {});
@@ -2333,8 +2346,17 @@ export const CrxRecorder: React.FC = ({
   const libraryCountText = `共 ${flowRecords.length} 条记录`;
   const recordingSubject = [flowDraft.flow.module, flowDraft.flow.page].filter(Boolean).join(' / ') || selectedFlowName;
   const isActivelyRecording = panelStage === 'recording' && mode === 'recording';
-  const statusTitle = panelStage === 'library' ? '流程库' : panelStage === 'flowSettings' ? `流程设置 · ${selectedFlowName}` : panelStage === 'aiSettings' ? 'AI 设置' : panelStage === 'aiUsage' ? 'AI 用量' : panelStage === 'assertion' ? `断言 · ${selectedAssertionStepLabel}` : panelStage === 'editRecord' ? `流程 · ${selectedFlowName}` : panelStage === 'replay' ? `回放 · ${selectedFlowName}` : panelStage === 'review' ? '导出检查' : panelStage === 'recording' ? (recordingFlowName ? `${isActivelyRecording ? '录制中' : '步骤检查'} · ${selectedFlowName}` : '录制 · 未选择流程') : '新建流程';
-  const statusCopy = panelStage === 'library' ? libraryCountText : panelStage === 'recording' ? (recordingFlowName ? (isActivelyRecording ? `正在录制：${recordingSubject}` : '当前未录制，可继续录制、补断言或保存记录') : '先选择或新建流程') : panelStage === 'assertion' ? `保存后挂到 ${selectedAssertionStepLabel} 之后` : panelStage === 'replay' ? '检查生成代码和运行日志' : panelStage === 'review' ? `${stats.missingAssertionCount ? `${stats.missingAssertionCount} 个步骤待补断言` : '导出检查已就绪'}` : panelStage === 'editRecord' ? '正在编辑当前流程记录' : panelStage === 'flowSettings' ? '当前业务流程的 AI Intent 策略' : panelStage === 'aiSettings' ? 'AI key 仅本地存储' : panelStage === 'aiUsage' ? '本地用量摘要' : '保存后才能进入录制和断言';
+  const aiReviewAutoEnabled = aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording;
+  const reviewStatusTitle = aiAssistReview.status === 'running' ? '停止录制后优化中' : aiAssistReview.status === 'error' ? 'AI 未应用' : aiAssistReview.validation?.autoApply ? '推荐版本已生成' : '导出检查';
+  const reviewStatusCopy = aiAssistReview.status === 'running'
+    ? '保存原始规则版 → AI 审查 → 安全检查'
+    : aiAssistReview.status === 'error'
+      ? '继续使用原始规则版'
+      : aiAssistReview.validation?.autoApply
+        ? '可直接进入回放验证'
+        : `${stats.missingAssertionCount ? `${stats.missingAssertionCount} 个步骤待补断言` : '导出检查已就绪'}`;
+  const statusTitle = panelStage === 'library' ? '流程库' : panelStage === 'flowSettings' ? `流程设置 · ${selectedFlowName}` : panelStage === 'aiSettings' ? 'AI 设置' : panelStage === 'aiUsage' ? 'AI 用量' : panelStage === 'assertion' ? `断言 · ${selectedAssertionStepLabel}` : panelStage === 'editRecord' ? `流程 · ${selectedFlowName}` : panelStage === 'replay' ? `回放 · ${selectedFlowName}` : panelStage === 'review' ? reviewStatusTitle : panelStage === 'recording' ? (recordingFlowName ? `${isActivelyRecording ? '录制中' : '步骤检查'} · ${selectedFlowName}` : '录制 · 未选择流程') : '新建流程';
+  const statusCopy = panelStage === 'library' ? libraryCountText : panelStage === 'recording' ? (recordingFlowName ? (isActivelyRecording ? `正在录制：${recordingSubject}` : '当前未录制，可继续录制、补断言或保存记录') : '先选择或新建流程') : panelStage === 'assertion' ? `保存后挂到 ${selectedAssertionStepLabel} 之后` : panelStage === 'replay' ? '检查生成代码和运行日志' : panelStage === 'review' ? reviewStatusCopy : panelStage === 'editRecord' ? '正在编辑当前流程记录' : panelStage === 'flowSettings' ? '当前业务流程的 AI Intent 策略' : panelStage === 'aiSettings' ? 'AI key 仅本地存储' : panelStage === 'aiUsage' ? '本地用量摘要' : '保存后才能进入录制和断言';
   const statusText = `${statusTitle} ${statusCopy}`;
   const statusClass = panelStage === 'assertion' || panelStage === 'review' || panelStage === 'replay' ? 'assertion' : panelStage === 'library' || panelStage === 'editRecord' || panelStage === 'flowSettings' || panelStage === 'aiSettings' || panelStage === 'aiUsage' ? 'review' : panelStage === 'recording' ? (hasActiveRecordingFlowContext ? (isActivelyRecording ? 'recording' : 'review') : 'setup') : 'setup';
   const metaLine = [flowDraft.flow.module, flowDraft.flow.role, `${stats.stepCount} 步骤`].filter(Boolean).join(' · ');
@@ -2484,7 +2506,7 @@ export const CrxRecorder: React.FC = ({
             <div className='status-left'><span className='dot'></span><strong>{statusTitle}</strong><span>{statusCopy}</span></div>
             <div className='status-right'><span className='pill ok'>本地记录</span></div>
           </div>
-          <nav className='side-panel-nav segmented' aria-label={hasFlowContext ? `当前流程：${selectedFlowName}` : '全局流程库'}>
+          <nav className={hasFlowContext ? 'side-panel-nav segmented workspace-nav' : 'side-panel-nav segmented library-nav'} aria-label={hasFlowContext ? `当前流程：${selectedFlowName}` : '全局流程库'}>
             <button type='button' className={panelStage === 'library' ? 'active' : ''} onClick={goToLibrary}>流程库</button>
             {hasFlowContext && <button type='button' className={panelStage === 'recording' ? 'active' : ''} onClick={() => {
               setPanelStage('recording');
@@ -2503,10 +2525,10 @@ export const CrxRecorder: React.FC = ({
             {hasFlowContext && <button type='button' className={panelStage === 'review' ? 'active' : ''} onClick={() => {
               enterReviewPanel().catch(() => {});
             }}>导出</button>}
-            <button type='button' className={panelStage === 'flowSettings' || panelStage === 'aiSettings' ? 'active' : ''} onClick={() => {
+            {(hasFlowContext || panelStage === 'library' || panelStage === 'aiSettings' || panelStage === 'aiUsage') && <button type='button' className={panelStage === 'flowSettings' || panelStage === 'aiSettings' ? 'active' : ''} onClick={() => {
               setPanelStage(hasActiveRecordingFlowContext ? 'flowSettings' : 'aiSettings');
               setActiveTab('business');
-            }}>设置</button>
+            }}>设置</button>}
           </nav>
           <div className='panel-body'>
             {panelStage === 'library' ? <FlowLibraryPanel
@@ -2667,15 +2689,17 @@ export const CrxRecorder: React.FC = ({
                   isRecording={mode === 'recording'}
                   aiIntentEnabled={flowAiIntentConfiguredEnabled}
                   aiIntentModeLabel={aiIntentModeLabel(aiSettings.mode)}
+                  aiAssistReviewEnabled={aiReviewAutoEnabled}
                   nextStepLabel={nextRecordingStepLabel}
                   insertAfterStepLabel={insertAfterStepLabel}
                 />
                 <div className={insertRecordingAfterStepId ? 'recording-toolbar inserting' : 'recording-toolbar'}>
                   <button type='button' onClick={mode === 'recording' ? pauseRecording : continueRecording}>{mode === 'recording' ? '暂停' : '继续'}</button>
-                  <button type='button' className='danger' disabled={mode !== 'recording'} onClick={stopRecording}>{aiAssistConfig.enabled && aiAssistConfig.reviewOnStopRecording ? '停止录制并审查' : '停止录制'}</button>
-                  <button type='button' onClick={() => saveCurrentRecord()}>保存记录</button>
+                  <button type='button' className='danger' disabled={mode !== 'recording'} onClick={() => stopRecording({ aiReview: aiReviewAutoEnabled })}>{aiReviewAutoEnabled ? '停止录制并优化' : '停止录制'}</button>
+                  <button type='button' onClick={() => aiReviewAutoEnabled && mode === 'recording' ? stopRecording({ aiReview: false }) : saveCurrentRecord()}>{aiReviewAutoEnabled ? '仅保存原始规则版' : '保存记录'}</button>
                   {insertRecordingAfterStepId ? <button type='button' onClick={exitInsertRecording}>退出插入</button> : <button type='button' onClick={() => enterReviewPanel().catch(() => {})}>导出</button>}
                 </div>
+                {aiReviewAutoEnabled && mode === 'recording' && <div className='recording-ai-hint'>停止后会先保留原始规则版，再生成推荐版本；如果 AI 未应用，会继续使用原始规则版。</div>}
                 {insertAnchorStep && <div className='insert-recording-banner'>
                   <div>
                     <strong>正在插入操作</strong>
@@ -2728,6 +2752,7 @@ export const CrxRecorder: React.FC = ({
                   onApplyAiReviewPatch={applyAiAssistReviewPatch}
                   onAiRepairAndRetry={runAiAssistRepairAndRetry}
                   onRollbackAiRepair={rollbackAiAssistRepair}
+                  onRestoreAiOriginal={restoreAiAssistOriginalFlow}
                   showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
                   showStepToolbar={false}
                 />}
@@ -2771,6 +2796,7 @@ export const CrxRecorder: React.FC = ({
                 onApplyAiReviewPatch={applyAiAssistReviewPatch}
                 onAiRepairAndRetry={runAiAssistRepairAndRetry}
                 onRollbackAiRepair={rollbackAiAssistRepair}
+                onRestoreAiOriginal={restoreAiAssistOriginalFlow}
                 showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
               />}
               {activeTab === 'code' && <div className='embedded-recorder'>
