@@ -77,6 +77,8 @@ type FlowDialogScope = NonNullable<NonNullable<NonNullable<FlowStep['target']>['
 type FlowTableScope = NonNullable<NonNullable<FlowStep['target']>['scope']>['table'];
 type FlowAncestorScope = NonNullable<NonNullable<NonNullable<FlowStep['target']>['scope']>['ancestor']>;
 
+const trailingDecorativeIconNamePattern = /\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+)*$/i;
+
 const effectiveReplayFlowHooks: EffectiveReplayFlowHooks = {
   choiceControlText,
   stepSynthesizesPopoverConfirm,
@@ -107,6 +109,7 @@ const inputFieldLocatorHooks: InputFieldLocatorHooks = {
 };
 
 const replaySkipPolicyHooks: ReplaySkipPolicyHooks = {
+  stepOpensPersistentDialog: stepOpensPersistentDialogFromPersistentContext,
   isPlaceholderSelectOptionClick,
   nextEffectiveStepForRedundantAction,
   isIntermediateSameFieldFill,
@@ -115,6 +118,7 @@ const replaySkipPolicyHooks: ReplaySkipPolicyHooks = {
   isRedundantParserSafeSelectFieldAction,
   isRedundantSelectSearchClear,
   isRedundantDropdownEscape,
+  isRedundantSelectPlaceholderDisplayClick,
   isRedundantExplicitPopoverConfirmStep,
   isRedundantExplicitDialogConfirmStep,
   isHiddenDialogContainerClickAfterConfirm,
@@ -130,6 +134,10 @@ export function createStepReplaySkipPolicy(mode: ReplaySkipMode) {
 
 export function createEffectiveReplayFlow(flow: BusinessFlow): BusinessFlow {
   return buildEffectiveReplayFlow(flow, effectiveReplayFlowHooks);
+}
+
+function stepOpensPersistentDialogFromPersistentContext(step: FlowStep) {
+  return stepOpensPersistentDialog(step) && isPersistentDialog(step.context?.before.dialog);
 }
 
 export function dropdownOptionEmitIdentity(step: FlowStep) {
@@ -257,10 +265,7 @@ function selectStepFormContext(step: FlowStep) {
 }
 
 function popupFieldLabelFromName(value?: string) {
-  const text = value
-      ?.replace(/^[*＊]\s*/, '')
-      .replace(/\s*question-circle\b.*$/i, '')
-      .trim();
+  const text = normalizeRequiredLabel(value || '');
   if (!text)
     return undefined;
   if (/选择|select|范围|路径|角色|类型|标签|分类|名称|端口|地址|WAN口|LAN口/i.test(text))
@@ -380,7 +385,9 @@ export function isPlaceholderSelectOptionClick(step: FlowStep) {
       rawSelectOptionTitle(step),
       placeholderOptionTextFromSource(selector),
   );
-  return !!optionName && /^请?选择(?:一个)?\S*/.test(optionName);
+  if (!optionName || !/^请?选择(?:一个)?\S*/.test(optionName))
+    return false;
+  return true;
 }
 
 function isPlaceholderSelectOptionSourceLine(line: string) {
@@ -389,6 +396,41 @@ function isPlaceholderSelectOptionSourceLine(line: string) {
 
 function placeholderOptionTextFromSource(source: string) {
   return source.match(/(?:has-text=|text=|name:\s*)[\\"'`](请?选择(?:一个)?[^\\"'`),]+)/)?.[1];
+}
+
+function looksLikeSelectPlaceholderDisplayClick(step: FlowStep) {
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  const testId = step.target?.testId || step.context?.before.target?.testId || step.target?.scope?.form?.testId || step.context?.before.form?.testId || '';
+  const fieldKind = step.context?.before.ui?.form?.fieldKind || String((step.target?.raw as { ui?: { form?: { fieldKind?: unknown } } } | undefined)?.ui?.form?.fieldKind || '');
+  return role === 'combobox' ||
+    /^(select|tree-select|cascader)$/.test(controlType) ||
+    /^(select|tree-select|cascader)$/.test(fieldKind) ||
+    looksLikeSelectControlTestId(testId) ||
+    !!(step.context?.before.form?.label || step.target?.scope?.form?.label);
+}
+
+export function isRedundantSelectPlaceholderDisplayClick(step: FlowStep, previousEmittedStep?: FlowStep, _nextEffectiveStep?: FlowStep) {
+  if (step.action !== 'click' || step.assertions.some(assertion => assertion.enabled))
+    return false;
+  if (!looksLikeSelectPlaceholderDisplayClick(step))
+    return false;
+  const placeholderText = generatedTextCandidate(
+      step.context?.before.target?.selectedOption,
+      step.context?.before.target?.text,
+      step.context?.before.target?.normalizedText,
+      step.target?.text,
+      step.target?.name,
+      step.target?.displayName,
+      rawSelectOptionTitle(step),
+  );
+  if (!placeholderText || !/^请?选择(?:一个)?\S*/.test(placeholderText))
+    return false;
+  if (!previousEmittedStep || !sameFieldIdentityIgnoringDialog(previousEmittedStep, step))
+    return false;
+  if (!isAntdSelectFieldStep(previousEmittedStep, step) && !antdSelectFieldLocator(previousEmittedStep))
+    return false;
+  return true;
 }
 
 export function isIntermediateSameFieldFill(step: FlowStep, steps: FlowStep[], index: number) {
@@ -426,6 +468,8 @@ export function nextEffectiveStepForRedundantAction(steps: FlowStep[], index: nu
 function isSkippedByRedundantActionLookahead(step: FlowStep, steps: FlowStep[], index: number, mode: RedundantLookaheadMode) {
   const previousStep = steps[index - 1];
   const nextStep = steps[index + 1];
+  if (stepOpensPersistentDialogFromPersistentContext(step))
+    return false;
   if (isIntermediateSameFieldFill(step, steps, index) || isPlaceholderSelectOptionClick(step))
     return true;
   if (isRedundantFieldFocusClick(step, nextStep))
@@ -894,9 +938,12 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
   if (isRedundantSelectedValueDisplayClick(step, options.previousStep))
     return undefined;
   const sourceCode = normalizeActionSource(step.sourceCode);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
+  if (isBroadLabelOnlyClick(step))
+    return undefined;
+  const shouldRegenerateSource = !!sourceCode && shouldRegenerateDecoratedFieldSource(step);
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
   const contractSource = contractPrimarySourceForStep(step, options);
   if (contractSource) {
@@ -908,9 +955,56 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
     const fallbackSource = normalizeActionSource(fallback);
     return fallbackSource ? appendSyntheticFollowUpSource(fallbackSource, step, options) : fallbackSource;
   }
-  if (sourceCode && sourceMatchesStep(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
-  return sourceCode;
+  return shouldRegenerateSource ? undefined : sourceCode;
+}
+
+function shouldRegenerateDecoratedFieldSource(step: FlowStep) {
+  if (!hasDecorativeFieldLabelSuffix(step))
+    return false;
+  if (!/^(click|fill|press)$/.test(step.action))
+    return false;
+  return !!fieldLocator(step);
+}
+
+function hasDecorativeFieldLabelSuffix(step: FlowStep) {
+  return [
+    step.target?.name,
+    step.target?.text,
+    step.target?.displayName,
+    step.target?.label,
+    step.target?.scope?.form?.label,
+    step.context?.before.form?.label,
+    step.context?.before.ui?.form?.label,
+  ].some(labelHasTrailingDecorativeIconName);
+}
+
+function labelHasTrailingDecorativeIconName(label?: string) {
+  return !!label && trailingDecorativeIconNamePattern.test(label.replace(/^\s*[*＊]\s*/, '').trim());
+}
+
+function isBroadLabelOnlyClick(step: FlowStep) {
+  if (step.action !== 'click')
+    return false;
+  const testId = actionTestIdEvidence(step);
+  if (testId)
+    return false;
+  const role = step.target?.role || step.context?.before.target?.role || '';
+  const controlType = step.context?.before.target?.controlType || String((step.target?.raw as { controlType?: unknown } | undefined)?.controlType || '');
+  if (/^(button|link|checkbox|radio|switch|combobox|option|menuitem|tab)$/i.test(role) ||
+      /^(button|checkbox|radio|switch|select|tree-select|cascader|select-option|tree-select-option|cascader-option|input|textarea|upload|tab)$/i.test(controlType))
+    return false;
+  const selectorSource = [
+    rawAction(step.rawAction).selector,
+    step.target?.selector,
+    step.target?.locator,
+    step.sourceCode,
+  ].filter(Boolean).join('\n');
+  if (!/internal:label|getByLabel\(/.test(selectorSource))
+    return false;
+  const text = normalizeGeneratedText(targetNameForLocator(step) || step.target?.label || step.context?.before.target?.text || step.context?.before.target?.normalizedText || '') || '';
+  return text.length > 32 && text.split(/\s+/).filter(Boolean).length >= 3;
 }
 
 function contractPrimarySourceForStep(step: FlowStep, options: EmitStepOptions = {}) {
@@ -920,6 +1014,8 @@ function contractPrimarySourceForStep(step: FlowStep, options: EmitStepOptions =
     return undefined;
   if (candidate.kind === 'active-popup-option')
     return contractActivePopupOptionSource(candidate, step, options);
+  if (candidate.kind === 'visible-popconfirm-confirm' && stepOpensPersistentDialogFromPersistentContext(step))
+    return undefined;
   if (shouldPreserveCapturedTestIdOrdinalForContract(step, candidate))
     return undefined;
   if (isAntdSelectFieldStep(step, options.nextStep))
@@ -1387,7 +1483,7 @@ function renderRawActionSource(step: FlowStep, options: EmitStepOptions = {}) {
 }
 
 function antdPopoverConfirmAfterClickSource(step: FlowStep, options: EmitStepOptions = {}) {
-  const testId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const testId = actionTestIdEvidence(step) || '';
   if (!isDeleteOrRemoveTestId(testId))
     return undefined;
   const popover = popoverOpenedAfterClick(step);
@@ -1423,8 +1519,32 @@ function popoverOpenedAfterClick(step: FlowStep) {
 function testIdFromSource(source?: string) {
   if (!source)
     return undefined;
-  return source.match(/getByTestId\(["']([^"']+)["']\)/)?.[1] ||
-    source.match(/data-testid=["']([^"']+)["']/)?.[1];
+  const normalized = source.replace(/\\(["'])/g, '$1');
+  return normalized.match(/getByTestId\(["']([^"']+)["']\)/)?.[1] ||
+    normalized.match(/internal:testid=\[data-testid=["']([^"']+)/)?.[1] ||
+    normalized.match(/data-testid=["']([^"']+)["']/)?.[1] ||
+    normalized.match(/\[data-testid=["']([^"']+)/)?.[1];
+}
+
+function testIdFromTargetText(value?: string) {
+  const normalized = normalizeGeneratedText(value || '');
+  const match = normalized?.match(/^testId\s+([A-Za-z0-9_-]+)$/i);
+  return match?.[1];
+}
+
+function actionTestIdEvidence(step: FlowStep) {
+  return step.target?.testId ||
+    step.context?.before.target?.testId ||
+    testIdFromSource(step.sourceCode) ||
+    testIdFromSource(JSON.stringify(rawAction(step.rawAction))) ||
+    testIdFromSource(rawAction(step.rawAction).selector) ||
+    testIdFromSource(JSON.stringify(step.target?.raw)) ||
+    testIdFromSource((step.target?.raw as { selector?: string } | undefined)?.selector) ||
+    testIdFromSource(step.target?.selector) ||
+    testIdFromSource(step.target?.locator) ||
+    testIdFromTargetText(step.target?.displayName) ||
+    testIdFromTargetText(step.target?.name) ||
+    testIdFromTargetText(step.target?.text);
 }
 
 function isDeleteOrRemoveTestId(testId: string) {
@@ -1443,9 +1563,11 @@ export function isRedundantExplicitPopoverConfirmStep(step: FlowStep, previous?:
   const popover = popoverOpenedAfterClick(previous);
   if (!popover)
     return false;
-  const currentTestId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const currentTestId = actionTestIdEvidence(step) || '';
   if (/(^|[-_])delete-confirm-(?:ok|confirm)([-_]|$)/i.test(currentTestId))
     return true;
+  if (currentTestId && !/(^|[-_])(popover|popconfirm|(?:delete|remove)-confirm)([-_]|$)/i.test(currentTestId))
+    return false;
   const currentSource = `${step.sourceCode || ''}\n${JSON.stringify(rawAction(step.rawAction))}\n${step.target?.selector || ''}\n${step.target?.locator || ''}`;
   const currentLabel = normalizeGeneratedText(step.target?.name || step.target?.text || step.target?.displayName || step.context?.before.target?.text || step.context?.before.target?.normalizedText || '');
   if (/\.ant-popover|internal:role=tooltip|role=\\?"tooltip\\?/i.test(currentSource) && isLikelyPopconfirmConfirmButton(currentLabel || ''))
@@ -1460,8 +1582,10 @@ function isExplicitPopoverConfirmStep(step: FlowStep | undefined, title: string)
     return false;
   const dialog = step.context?.before.dialog || step.target?.scope?.dialog;
   const source = `${step.sourceCode || ''}\n${JSON.stringify(rawAction(step.rawAction))}\n${step.target?.selector || ''}\n${step.target?.locator || ''}`;
-  const currentTestId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
-  const sourceMentionsPopover = /\.ant-popover|role=\\?"tooltip\\?"|internal:role=tooltip/i.test(source) || step.target?.role === 'tooltip' || step.context?.before.target?.role === 'tooltip' || /(^|[-_])(popover|confirm|ok)([-_]|$)/i.test(currentTestId);
+  const currentTestId = actionTestIdEvidence(step) || '';
+  const sourceMentionsPopover = /\.ant-popover|role=\\?"tooltip\\?"|internal:role=tooltip/i.test(source) || step.target?.role === 'tooltip' || step.context?.before.target?.role === 'tooltip' || /(^|[-_])(popover|popconfirm|(?:delete|remove)-confirm)([-_]|$)/i.test(currentTestId);
+  if (isPersistentDialog(dialog) && !sourceMentionsPopover)
+    return false;
   if (dialog?.type !== 'popover' && !sourceMentionsPopover)
     return false;
   if (dialog?.title && dialog.title !== title)
@@ -1473,17 +1597,18 @@ function isExplicitPopoverConfirmStep(step: FlowStep | undefined, title: string)
 }
 
 function isLikelyPopconfirmConfirmButton(label: string) {
-  const compact = normalizeGeneratedText(label)?.replace(/\s+/g, '') || '';
-  return /^(确定|确认|是|好的|删除|移除|保存|提交|继续|ok|yes|delete|remove|save|submit|continue)$/i.test(compact) || /(?:^|\s)(确定|确认|删除|移除|ok|yes|delete|remove)(?:\s|$)/i.test(label);
+  const normalized = normalizeGeneratedText(label)?.replace(/^(?:(?:tooltip|button|link)\s+)+/i, '') || '';
+  const compact = normalized.replace(/\s+/g, '');
+  return /^(确定|确认|是|好的|删除|移除|保存|提交|继续|ok|yes|delete|remove|save|submit|continue)$/i.test(compact) || /(?:^|\s)(确定|确认|删除|移除|ok|yes|delete|remove)(?:\s|$)/i.test(normalized);
 }
 
 export function isRedundantExplicitDialogConfirmStep(step: FlowStep, previous?: FlowStep) {
   if (!previous || step.action !== 'click' || previous.action !== 'click')
     return false;
-  const currentTestId = step.target?.testId || step.context?.before.target?.testId || '';
+  const currentTestId = actionTestIdEvidence(step) || '';
   if (currentTestId)
     return false;
-  const previousTestId = previous.target?.testId || previous.context?.before.target?.testId || testIdFromSource(previous.sourceCode) || '';
+  const previousTestId = actionTestIdEvidence(previous) || '';
   if (!/(^|[-_])(confirm|ok|save|submit|apply)([-_]|$)/i.test(previousTestId))
     return false;
   const currentLabel = normalizeGeneratedText(step.target?.name || step.target?.text || step.target?.displayName || step.context?.before.target?.text || step.context?.before.target?.normalizedText || '');
@@ -1517,7 +1642,7 @@ export function isHiddenDialogContainerClickAfterConfirm(step: FlowStep, previou
 function isDialogConfirmActivation(step: FlowStep) {
   if (step.action !== 'click' && step.action !== 'press')
     return false;
-  const testId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const testId = actionTestIdEvidence(step) || '';
   const label = normalizeGeneratedText(step.target?.name || step.target?.text || step.target?.displayName || step.context?.before.target?.text || step.context?.before.target?.normalizedText || '');
   if (/(^|[-_])(confirm|ok|save|submit|apply)([-_]|$)/i.test(testId))
     return true;
@@ -1535,7 +1660,7 @@ function isNonInteractiveDialogContainerClick(step: FlowStep) {
   if (isTableScopedClick(step))
     return false;
   const dialog = step.target?.scope?.dialog || step.context?.before.dialog || step.context?.after?.dialog;
-  const testId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const testId = actionTestIdEvidence(step) || '';
   const contextTag = step.context?.before.target?.tag || String((step.target?.raw as { tag?: unknown } | undefined)?.tag || '');
   const rootByTestId = !!testId && (/(^|[-_])(modal|dialog|drawer|popover|overlay)([-_]|$)/i.test(testId) || /(^|[-_])(container|wrapper|region|root)([-_]|$)/i.test(testId));
   const rootContainerByTestId = rootByTestId && /^(div|section|article|main|aside)$/i.test(contextTag || '') && !role;
@@ -1624,7 +1749,7 @@ function preferredTargetLocator(step: FlowStep, options: EmitStepOptions = {}) {
 function visibleDialogConfirmButtonLocator(step: FlowStep) {
   if (step.action !== 'click')
     return undefined;
-  const testId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const testId = actionTestIdEvidence(step) || '';
   if (testId)
     return undefined;
   const role = step.target?.role || step.context?.before.target?.role || '';
@@ -1638,6 +1763,8 @@ function visibleDialogConfirmButtonLocator(step: FlowStep) {
 }
 
 function popoverConfirmButtonLocator(step: FlowStep) {
+  if (stepOpensPersistentDialogFromPersistentContext(step))
+    return undefined;
   const targetName = targetNameForLocator(step);
   const selector = rawAction(step.rawAction).selector || step.target?.selector || step.target?.locator || '';
   const role = step.target?.role || step.context?.before.target?.role || '';
@@ -1652,7 +1779,7 @@ function popoverConfirmButtonLocator(step: FlowStep) {
 }
 
 function modalConfirmButtonLocator(step: FlowStep) {
-  const currentTestId = step.target?.testId || step.context?.before.target?.testId || testIdFromSource(step.sourceCode) || testIdFromSource(JSON.stringify(rawAction(step.rawAction))) || '';
+  const currentTestId = actionTestIdEvidence(step) || '';
   if (currentTestId)
     return undefined;
   const role = step.target?.role || step.context?.before.target?.role || 'button';
@@ -2165,12 +2292,12 @@ function antdSelectFieldLocator(step: FlowStep) {
     step.target?.scope?.form?.label ||
     step.target?.label ||
     popupFieldLabelFromName(step.target?.name || step.target?.text || step.target?.displayName);
-  if (targetTestId) {
+  if (targetTestId && !shouldIgnoreTestIdForSelectField(targetTestId)) {
     const testIdLocator = `page.getByTestId(${stringLiteral(targetTestId)})`;
     return isContainerTestIdForSelectField(targetTestId) ? selectFieldLocatorWithinRoot(testIdLocator, label) || `${testIdLocator}.locator(${stringLiteral('.ant-select-selector, .ant-cascader-picker, .ant-select')}).first()` : testIdLocator;
   }
   const formTestId = step.context?.before.form?.testId || step.target?.scope?.form?.testId;
-  if (formTestId) {
+  if (formTestId && !shouldIgnoreTestIdForSelectField(formTestId)) {
     const formRoot = `page.getByTestId(${stringLiteral(formTestId)})`;
     return isContainerTestIdForSelectField(formTestId) ? selectFieldLocatorWithinRoot(formRoot, label) || `${formRoot}.locator(${stringLiteral('.ant-select-selector, .ant-cascader-picker, .ant-select')}).first()` : `${formRoot}.locator(${stringLiteral('.ant-select-selector, .ant-cascader-picker, .ant-select')}).first()`;
   }
@@ -2191,12 +2318,21 @@ function isContainerTestIdForSelectField(testId: string) {
   return /(modal|drawer|dialog|form)$/i.test(testId) || looksLikeStructuralContainerTestId(testId);
 }
 
+function shouldIgnoreTestIdForSelectField(testId: string) {
+  if (looksLikeSelectControlTestId(testId) || isContainerTestIdForSelectField(testId))
+    return false;
+  return looksLikeActionTestId(testId);
+}
+
 function formItemSearchText(label: string) {
   return normalizeRequiredLabel(label) || label;
 }
 
 function normalizeRequiredLabel(label: string) {
-  return label.replace(/^\s*\*\s*/, '').trim();
+  return label
+      .replace(/^\s*[*＊]\s*/, '')
+      .replace(trailingDecorativeIconNamePattern, '')
+      .trim();
 }
 
 function dialogRootLocator(dialog?: FlowDialogScope) {
@@ -2287,6 +2423,14 @@ function globalTestIdLocator(step: FlowStep) {
     if (isStructuralChoiceControlTestId(step, testId))
       return undefined;
     return scopedOrGlobalTestIdLocator(step, testId, 'context');
+  }
+  const evidenceTestId = actionTestIdEvidence(step);
+  if (evidenceTestId) {
+    if (tableHasStableRow && evidenceTestId === tableRootTestId)
+      return undefined;
+    if (isStructuralChoiceControlTestId(step, evidenceTestId))
+      return undefined;
+    return scopedOrGlobalTestIdLocator(step, evidenceTestId, 'target');
   }
   return undefined;
 }

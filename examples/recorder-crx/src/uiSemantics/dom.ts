@@ -7,6 +7,17 @@
 const maxAncestorDepth = 12;
 const maxTextLength = 80;
 const sensitivePattern = /(password|passwd|pwd|token|cookie|authorization|auth|secret|session|api[-_]?key)/i;
+const decorativeLabelDescendantSelector = [
+  '.anticon',
+  '.icon',
+  '.ant-form-item-tooltip',
+  '[class*="icon"]',
+  '[class*="Icon"]',
+  '[data-icon]',
+  '[aria-hidden="true"]',
+  '[role="img"]',
+  'svg',
+].join(', ');
 
 export function closestWithin(target: Element | undefined | null, selector: string, maxDepth = maxAncestorDepth): Element | undefined {
   for (let element: Element | null | undefined = target; element && maxDepth >= 0; element = element.parentElement, maxDepth--) {
@@ -57,7 +68,22 @@ export function testIdOf(element?: Element | null): string | undefined {
 export function labelTextForFormItem(formItem?: Element): string | undefined {
   if (!formItem)
     return undefined;
-  return textFromFirst('.ant-form-item-label label, label', formItem) || safeText(formItem.getAttribute('aria-label'));
+  return labelElementText(formItem.querySelector('.ant-form-item-label label, label')) || normalizeFormLabelText(safeText(formItem.getAttribute('aria-label')));
+}
+
+export function labelElementText(element?: Element | null): string | undefined {
+  if (!element)
+    return undefined;
+  const clone = element.cloneNode(true) as Element;
+  clone.querySelectorAll(decorativeLabelDescendantSelector).forEach(child => child.remove());
+  return normalizeFormLabelText((clone as HTMLElement).innerText || clone.textContent || undefined);
+}
+
+export function normalizeFormLabelText(value?: string): string | undefined {
+  return value
+      ?.replace(/^\s*[*＊]\s*/, '')
+      .replace(/\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+(?:\s+[a-z][a-z0-9]*(?:-[a-z0-9]+)+)*$/i, '')
+      .trim() || undefined;
 }
 
 export function fieldNameFor(anchor: Element): { name?: string; namePath?: string[]; source?: string } {

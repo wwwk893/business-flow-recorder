@@ -5,7 +5,7 @@
  */
 import { appendPageContextEvents } from './eventJournal';
 import { migrateFlowToStableStepModel } from './flowMigration';
-import type { ElementContext, PageContextEvent } from './pageContextTypes';
+import type { ElementContext, PageContextEvent, PageContextSnapshot } from './pageContextTypes';
 import { cloneRecorderState, withRecorderState } from './recorderState';
 import { nextStableStepId, recomputeOrders } from './stableIds';
 import type { BusinessFlow, FlowRecorderState, FlowStep, FlowTarget, FlowTargetScope, RecordedActionEntry } from './types';
@@ -72,7 +72,8 @@ export function appendSyntheticPageContextStepsWithResult(flow: BusinessFlow, ev
     const hasExistingStep = radioChoiceControlEvent
       ? hasExistingSyntheticChoiceStepForEvent(steps, event)
       : choiceControlEvent ? hasExistingChoiceControlStepForEvent(steps, event) : hasSyntheticStepForEvent(steps, event);
-    if (hasExistingStep || !choiceControlEvent && hasRecordedClickForEvent(recorder, event)) {
+    const hasRecordedClick = !choiceControlEvent && hasRecordedClickForEvent(recorder, event);
+    if (hasExistingStep || hasRecordedClick && hasProjectedClickStepForEvent(steps, event)) {
       skippedEventIds.push(event.id);
       continue;
     }
@@ -360,17 +361,26 @@ function sameClickCluster(left: PageContextEvent, right: PageContextEvent) {
   if (!timeClose)
     return false;
 
-  if (left.before.target?.testId && left.before.target.testId === right.before.target?.testId)
-    return true;
+  const leftTestId = left.before.target?.testId;
+  const rightTestId = right.before.target?.testId;
+  const leftDialog = left.after?.dialog || left.after?.openedDialog || left.before.dialog;
+  const rightDialog = right.after?.dialog || right.after?.openedDialog || right.before.dialog;
+  if (leftTestId || rightTestId) {
+    if (leftTestId && rightTestId)
+      return leftTestId === rightTestId;
+    if (leftDialog || rightDialog)
+      return false;
+  }
 
   const leftText = left.before.target ? targetComparableText(left.before.target) : undefined;
   const rightText = right.before.target ? targetComparableText(right.before.target) : undefined;
-  if (leftText && rightText && leftText === rightText)
-    return true;
+  if (!leftText || !rightText || leftText !== rightText)
+    return false;
 
-  const leftDialog = left.after?.dialog?.title || left.before.dialog?.title;
-  const rightDialog = right.after?.dialog?.title || right.before.dialog?.title;
-  return !!leftDialog && leftDialog === rightDialog && leftText === rightText;
+  if (leftDialog || rightDialog)
+    return !!leftDialog && !!rightDialog && leftDialog.type === rightDialog.type && !!leftDialog.title && leftDialog.title === rightDialog.title;
+
+  return true;
 }
 
 function bestPageContextEvent(events: PageContextEvent[]) {
@@ -497,20 +507,68 @@ function hasSyntheticStepForEvent(steps: FlowStep[], event: PageContextEvent) {
     if (step.action === 'click' && step.context?.eventId === event.id)
       return true;
     if (step.action === 'click' && step.context?.before.target &&
-      targetsLikelySame(step.context.before.target, event.before.target) &&
+      contextTargetsLikelySame(step.context.before, event.before) &&
       Math.abs(Number(step.context.capturedAt ?? 0) - Number(event.wallTime ?? 0)) < 1500)
       return true;
     return raw.syntheticContextEventId === event.id ||
       (raw.syntheticContextEventSignature === pageContextTargetSignature(event.before.target) &&
         Math.abs(Number(raw.syntheticContextEventWallTime ?? 0) - Number(event.wallTime ?? 0)) < 750) ||
       (step.kind === 'manual' && step.action === 'click' && step.context?.before.target &&
-        targetsLikelySame(step.context.before.target, event.before.target) &&
+        contextTargetsLikelySame(step.context.before, event.before) &&
         Math.abs(Number(raw.syntheticContextEventWallTime ?? 0) - Number(event.wallTime ?? 0)) < 1500);
   });
 }
 
 function hasRecordedClickForEvent(recorder: FlowRecorderState, event: PageContextEvent) {
   return recorder.actionLog.some(entry => recordedEntryCoversContextEvent(entry, event));
+}
+
+function hasProjectedClickStepForEvent(steps: FlowStep[], event: PageContextEvent) {
+  return steps.some(step => projectedClickStepCoversContextEvent(step, event));
+}
+
+function projectedClickStepCoversContextEvent(step: FlowStep, event: PageContextEvent) {
+  if (step.action !== 'click')
+    return false;
+  if (step.context?.eventId === event.id)
+    return true;
+  const eventWallTime = typeof event.wallTime === 'number' ? event.wallTime : undefined;
+  const stepTime = stepWallTime(step);
+  const timeClose = eventWallTime === undefined || typeof stepTime !== 'number' || Math.abs(stepTime - eventWallTime) < 2000;
+  if (!timeClose)
+    return false;
+  const projectedTarget = step.target || extractTarget(normalizeAction(asRecord(step.rawAction) as ActionInContextLike));
+  if (projectedTarget?.testId && event.before.target?.testId && projectedTarget.testId === event.before.target.testId)
+    return true;
+  if (step.context?.before.target) {
+    if (contextTargetsLikelySame(step.context.before, event.before))
+      return true;
+  } else if (targetsLikelySame(projectedTarget, event.before.target)) {
+    return true;
+  }
+  return !!projectedTarget?.testId && isWeakPageContextClickTarget(event.before.target);
+}
+
+function contextTargetsLikelySame(left: PageContextSnapshot, right: PageContextSnapshot) {
+  if (!left.target || !right.target)
+    return false;
+  if (hasOneSidedTestId(left.target, right.target) && dialogScopesConflict(left, right))
+    return false;
+  return targetsLikelySame(left.target, right.target);
+}
+
+function hasOneSidedTestId(left: FlowTarget | ElementContext, right: FlowTarget | ElementContext) {
+  const leftTestId = 'testId' in left ? left.testId : undefined;
+  const rightTestId = 'testId' in right ? right.testId : undefined;
+  return !!leftTestId !== !!rightTestId;
+}
+
+function dialogScopesConflict(left: PageContextSnapshot, right: PageContextSnapshot) {
+  if (!left.dialog || !right.dialog)
+    return false;
+  if (left.dialog.type !== right.dialog.type)
+    return true;
+  return !!left.dialog.title && !!right.dialog.title && left.dialog.title !== right.dialog.title;
 }
 
 function hasExistingChoiceControlStepForEvent(steps: FlowStep[], event: PageContextEvent) {

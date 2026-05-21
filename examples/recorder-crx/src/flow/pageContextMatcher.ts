@@ -26,12 +26,13 @@ export function matchPageContextEvent(step: FlowStep, events: PageContextEvent[]
   const compatibleEvents = events.filter(event => isCompatible(step.action, event.kind));
   const windowStart = timing.start - beforeWindowMs;
   const windowEnd = timing.end + afterWindowMs;
-  const targetTestId = step.target?.testId;
+  const targetTestId = stepTestIdEvidence(step);
   const primaryCandidates = compatibleEvents.filter(event => {
     const eventTime = timing.clock === 'wall' ? event.wallTime : event.time;
     return eventTime !== undefined && eventTime >= windowStart && eventTime <= windowEnd;
   });
-  const candidates = primaryCandidates.length ? primaryCandidates : exactTestIdFallbackCandidates(step, compatibleEvents, timing, targetTestId);
+  const exactFallback = exactTestIdFallbackCandidates(step, compatibleEvents, timing, targetTestId);
+  const candidates = mergeCandidateEvents(primaryCandidates, exactFallback);
   if (!candidates.length)
     return undefined;
 
@@ -47,6 +48,20 @@ export function matchPageContextEvent(step: FlowStep, events: PageContextEvent[]
       return scoreDiff;
     return Math.abs(eventTimeFor(a.event, timing.clock) - timing.end) - Math.abs(eventTimeFor(b.event, timing.clock) - timing.end);
   })[0].event;
+}
+
+function mergeCandidateEvents(...groups: PageContextEvent[][]) {
+  const seen = new Set<string>();
+  const merged: PageContextEvent[] = [];
+  for (const group of groups) {
+    for (const event of group) {
+      if (seen.has(event.id))
+        continue;
+      seen.add(event.id);
+      merged.push(event);
+    }
+  }
+  return merged;
 }
 
 function exactTestIdFallbackCandidates(step: FlowStep, events: PageContextEvent[], timing: NonNullable<ReturnType<typeof actionTiming>>, targetTestId?: string) {
@@ -68,7 +83,7 @@ function candidateScore(step: FlowStep, event: PageContextEvent) {
   if (!target || !contextTarget)
     return 0;
 
-  const targetTestId = target.testId;
+  const targetTestId = stepTestIdEvidence(step);
   const contextTestId = contextTarget.testId;
   if (targetTestId && contextTestId)
     return targetTestId === contextTestId ? 200 : -1;
@@ -85,8 +100,6 @@ function candidateScore(step: FlowStep, event: PageContextEvent) {
   let score = 0;
   if (targetTestId && !contextTestId)
     score += 20;
-  if (!targetTestId && contextTestId)
-    score += 10;
   if (stepText && contextText && stepText === contextText)
     score += 120;
   if (labelText && formLabel && labelText === formLabel)
@@ -107,6 +120,48 @@ function candidateScore(step: FlowStep, event: PageContextEvent) {
   if (step.action === 'fill' && event.kind === 'click' && (clearTextMismatch || (targetTestId && contextTestId && targetTestId !== contextTestId)))
     return -1;
   return score;
+}
+
+function stepTestIdEvidence(step: FlowStep) {
+  return step.target?.testId ||
+    testIdFromSelector(step.target?.selector) ||
+    testIdFromSelector(step.target?.locator) ||
+    testIdFromSelector(stringValue((step.target?.raw as { selector?: unknown } | undefined)?.selector)) ||
+    testIdFromSelector(JSON.stringify(step.target?.raw)) ||
+    testIdFromRawAction(step.rawAction) ||
+    testIdFromSourceCode(step.sourceCode) ||
+    testIdFromTargetText(step.target?.displayName) ||
+    testIdFromTargetText(step.target?.name) ||
+    testIdFromTargetText(step.target?.text);
+}
+
+function testIdFromRawAction(rawAction: unknown) {
+  const record = rawAction && typeof rawAction === 'object' ? rawAction as Record<string, unknown> : undefined;
+  const nestedAction = record?.action && typeof record.action === 'object' ? record.action as Record<string, unknown> : undefined;
+  return testIdFromSelector(stringValue(nestedAction?.selector) || stringValue(record?.selector));
+}
+
+function testIdFromSourceCode(sourceCode?: string) {
+  return sourceCode?.match(/getByTestId\(["']([^"']+)["']\)/)?.[1] ||
+    testIdFromSelector(sourceCode);
+}
+
+function testIdFromSelector(selector?: string) {
+  if (!selector)
+    return undefined;
+  const source = selector.replace(/\\(["'])/g, '$1');
+  return source.match(/internal:testid=\[data-testid=["']([^"']+)/)?.[1] ||
+    source.match(/data-testid=["']([^"']+)/)?.[1] ||
+    source.match(/\[data-testid=["']([^"']+)/)?.[1];
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function testIdFromTargetText(value?: string) {
+  const match = value?.replace(/\s+/g, ' ').trim().match(/^testId\s+([A-Za-z0-9_-]+)$/i);
+  return match?.[1];
 }
 
 function normalizeComparable(value?: string) {
@@ -147,7 +202,7 @@ function isCompatible(action: FlowActionType, eventKind: PageContextEvent['kind'
     case 'wait':
       return false;
     case 'navigate':
-      return eventKind === 'navigation' || eventKind === 'click';
+      return eventKind === 'navigation';
     default:
       return eventKind === 'click' || eventKind === 'change' || eventKind === 'input';
   }

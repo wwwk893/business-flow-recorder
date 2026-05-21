@@ -54,6 +54,7 @@ test.describe('MVP 0.1.4 AntD / ProComponents semantic adapter', () => {
       weak?: boolean;
     }> = [
       { name: 'AntD Form.Item input', sequence: ['#username-input'], component: 'input', library: 'antd', recipe: 'fill-form-field', formLabel: '用户名', formKind: 'antd-form' },
+      { name: 'AntD Form.Item input with help icon', sequence: ['#policy-name-input'], component: 'input', library: 'antd', recipe: 'fill-form-field', formLabel: '策略名称', formKind: 'antd-form' },
       { name: 'AntD Form submit', sequence: ['#form-submit'], component: 'form', library: 'antd', recipe: 'submit-form', formKind: 'antd-form' },
       { name: 'AntD Table row action', sequence: ['#user-edit'], component: 'table', library: 'antd', recipe: 'table-row-action', tableTitle: '用户列表', rowKey: 'user-42', columnTitle: '操作' },
       { name: 'AntD Select option', sequence: ['#role-select .ant-select-selector', '#role-admin'], component: 'select', library: 'antd', recipe: 'select-option', formLabel: '角色', optionText: '管理员' },
@@ -505,6 +506,7 @@ body { font-family: sans-serif; }
 <section class="ant-pro-page-container" data-testid="tenant-page"><h1>租户中心</h1><button id="page-action">刷新页面</button></section>
 <span id="plain-status">普通状态文本</span>
 <form class="ant-form" name="basicForm"><div class="ant-form-item ant-form-item-required"><div class="ant-form-item-label"><label for="username-input">用户名</label></div><div class="ant-form-item-control"><input id="username-input" name="username" placeholder="请输入用户名" /></div></div><button id="form-submit" class="ant-btn ant-btn-primary">提交</button><button id="form-reset" class="ant-btn">重置</button></form>
+<form class="ant-form" name="policyForm"><div class="ant-form-item ant-form-item-required"><div class="ant-form-item-label"><label for="policy-name-input">* 策略名称 <span class="anticon anticon-form-help-outlined">form-help-outlined</span></label></div><div class="ant-form-item-control"><input id="policy-name-input" name="policyName" placeholder="请输入" /></div></div></form>
 <div class="ant-form-item"><div class="ant-form-item-label"><label>角色</label></div><div id="role-select" class="ant-select"><div class="ant-select-selector" role="combobox" aria-label="角色"><span>请选择角色</span></div></div></div>
 <div class="ant-select-dropdown"><div id="role-admin" class="ant-select-item-option" role="option" title="管理员"><div>管理员</div></div></div>
 <div class="ant-form-item"><div class="ant-form-item-label"><label>发布范围</label></div><div id="scope-tree-select" class="ant-tree-select ant-select"><div class="ant-select-selector" role="combobox" aria-label="发布范围"><span>请选择范围</span></div></div></div>

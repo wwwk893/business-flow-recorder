@@ -42,6 +42,7 @@ import { finalizeRecordingSession } from './sessionFinalizer';
 import { appendTerminalStateAssertions, createTerminalStateAssertion, replayDiagnosticSummary } from './terminalAssertions';
 import { eventJournalStats } from './eventJournal';
 import { mergePageContextIntoFlow } from './flowContextMerger';
+import { matchPageContextEvent } from './pageContextMatcher';
 import { hasPendingOverlayPrediction, pageContextEventsForIngestion, shouldQueueSyntheticPageContextEvent, updatePageContextEventSignatures } from './pageContextIngestion';
 import { suggestIntent } from './intentRules';
 import { createRepeatSegment } from './repeatSegments';
@@ -4323,6 +4324,122 @@ const tests: TestCase[] = [
     },
   },
   {
+    name: 'page context matcher keeps delayed exact test id candidate over nearby text confirm',
+    run: () => {
+      const step: FlowStep = {
+        id: 's001',
+        order: 1,
+        action: 'click',
+        target: { testId: 'wan-config-confirm', role: 'button', displayName: '确 定' },
+        rawAction: { name: 'click', selector: 'internal:testid=[data-testid="wan-config-confirm"s]', wallTime: 10_000, endWallTime: 10_010 } as any,
+        assertions: [],
+      };
+      const popconfirmTextEvent: PageContextEvent = {
+        id: 'ctx-popconfirm-ok',
+        kind: 'click',
+        time: 10_020,
+        wallTime: 10_020,
+        before: {
+          dialog: { type: 'popover', title: '删除此行？', visible: true },
+          target: { tag: 'button', role: 'button', text: '确 定', normalizedText: '确 定', framework: 'antd', controlType: 'button' },
+        },
+      };
+      const modalTestIdEvent: PageContextEvent = {
+        id: 'ctx-modal-submit',
+        kind: 'click',
+        time: 11_200,
+        wallTime: 11_200,
+        before: {
+          dialog: { type: 'modal', title: '编辑 WAN1 共享 WAN', visible: true },
+          target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', normalizedText: '确 定', framework: 'antd', controlType: 'button' },
+        },
+      };
+
+      const matched = matchPageContextEvent(step, [popconfirmTextEvent, modalTestIdEvent]);
+
+      assertEqual(matched?.id, 'ctx-modal-submit');
+    },
+  },
+  {
+    name: 'page context matcher does not let text-only popconfirm consume delayed exact modal submit',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { role: 'button', name: '确 定', displayName: '确 定' },
+            rawAction: { name: 'click', selector: 'internal:role=button[name="确 定"i]', wallTime: 10_000, endWallTime: 10_010 } as any,
+            assertions: [],
+          },
+          {
+            id: 's005',
+            order: 5,
+            action: 'click',
+            target: { testId: 'wan-config-confirm', role: 'button', displayName: '确 定' },
+            rawAction: { name: 'click', selector: 'internal:testid=[data-testid="wan-config-confirm"s]', wallTime: 11_000, endWallTime: 11_010 } as any,
+            assertions: [],
+          },
+        ],
+      };
+      const events: PageContextEvent[] = [
+        {
+          id: 'ctx-popconfirm-ok',
+          kind: 'click',
+          time: 10_020,
+          wallTime: 10_020,
+          before: {
+            dialog: { type: 'popover', title: '删除此行？', visible: true },
+            target: { tag: 'button', role: 'button', text: '确 定', normalizedText: '确 定', framework: 'antd', controlType: 'button' },
+          },
+        },
+        {
+          id: 'ctx-modal-submit',
+          kind: 'click',
+          time: 11_200,
+          wallTime: 11_200,
+          before: {
+            dialog: { type: 'modal', title: '编辑 WAN1 共享 WAN', visible: true },
+            target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', normalizedText: '确 定', framework: 'antd', controlType: 'button' },
+          },
+        },
+      ];
+
+      const merged = mergePageContextIntoFlow(flow, events);
+
+      assertEqual(merged.steps[0].context?.eventId, 'ctx-popconfirm-ok');
+      assertEqual(merged.steps[1].context?.eventId, 'ctx-modal-submit');
+      assertEqual(merged.steps[1].context?.before.dialog?.title, '编辑 WAN1 共享 WAN');
+    },
+  },
+  {
+    name: 'page context matcher uses raw internal testid selector as exact fallback evidence',
+    run: () => {
+      const step: FlowStep = {
+        id: 's001',
+        order: 1,
+        action: 'click',
+        target: { role: 'button', displayName: '确 定' },
+        rawAction: { name: 'click', selector: 'internal:testid=[data-testid="wan-config-confirm"s]', wallTime: 10_000, endWallTime: 10_010 } as any,
+        assertions: [],
+      };
+      const matched = matchPageContextEvent(step, [{
+        id: 'ctx-delayed-modal-submit',
+        kind: 'click',
+        time: 14_000,
+        wallTime: 14_000,
+        before: {
+          dialog: { type: 'modal', title: '编辑 WAN1 共享 WAN', visible: true },
+          target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', normalizedText: '确 定', framework: 'antd', controlType: 'button' },
+        },
+      } as PageContextEvent]);
+
+      assertEqual(matched?.id, 'ctx-delayed-modal-submit');
+    },
+  },
+  {
     name: 'same label fills in different dialogs stay as separate business steps',
     run: () => {
       const flow = mergeActionsIntoFlow(undefined, [
@@ -4924,6 +5041,84 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'page context click is synthesized when recorder click was not projected as a click step',
+    run: () => {
+      const recorded = mergeActionsIntoFlow(createNamedFlow(), [
+        testIdClickAction('site-ip-address-pool-create-button', 1000),
+      ], [], {});
+      const pollutedNavigate: BusinessFlow = {
+        ...recorded,
+        steps: recorded.steps.map(step => ({
+          ...step,
+          action: 'navigate',
+          url: 'http://127.0.0.1:3217/antd-pro-form-fields.html',
+          target: undefined,
+          rawAction: undefined,
+          sourceCode: undefined,
+        })),
+      };
+      const event = pageClickEventWithTarget('ctx-open-ipv4-pool', 1000, {
+        tag: 'button',
+        role: 'button',
+        testId: 'site-ip-address-pool-create-button',
+        text: '新 建',
+        normalizedText: '新 建',
+        framework: 'procomponents',
+        controlType: 'button',
+        locatorQuality: 'testid',
+      } as ElementContext);
+      event.after = {
+        dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+        openedDialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+      };
+      const result = appendSyntheticPageContextStepsWithResult(pollutedNavigate, [event]);
+
+      assertEqual(result.insertedStepIds.length, 1);
+      assertEqual(result.flow.steps.map(step => step.action), ['navigate', 'click']);
+      assertEqual(result.flow.steps[1].target?.testId, 'site-ip-address-pool-create-button');
+      assertEqual(result.flow.steps[1].context?.after?.openedDialog?.title, '新建IPv4地址池');
+    },
+  },
+  {
+    name: 'page context click does not pollute a navigation step target',
+    run: () => {
+      const recorded = mergeActionsIntoFlow(createNamedFlow(), [
+        testIdClickAction('site-ip-add', 1000),
+      ], [], {});
+      const navigationWithClickTiming: BusinessFlow = {
+        ...recorded,
+        steps: recorded.steps.map(step => ({
+          ...step,
+          action: 'navigate',
+          url: 'http://127.0.0.1:3217/antd-business-flow-stability.html',
+          target: undefined,
+          sourceCode: undefined,
+        })),
+      };
+      const event = pageClickEventWithTarget('ctx-open-stability-ip', 1000, {
+        tag: 'button',
+        role: 'button',
+        testId: 'site-ip-add',
+        text: '新增IP端口池',
+        normalizedText: '新增IP端口池',
+        framework: 'antd',
+        controlType: 'button',
+        locatorQuality: 'testid',
+      } as ElementContext);
+      event.after = {
+        dialog: { type: 'modal', title: '新增IP端口池', visible: true },
+        openedDialog: { type: 'modal', title: '新增IP端口池', visible: true },
+      };
+      const merged = mergePageContextIntoFlow(navigationWithClickTiming, [event]);
+
+      assertEqual(merged.steps.length, 1);
+      assertEqual(merged.steps[0].action, 'navigate');
+      assertEqual(merged.steps[0].target?.testId, undefined);
+      assertEqual(merged.steps[0].context?.eventId, undefined);
+      assertEqual(merged.artifacts?.recorder?.eventJournal?.highWaterMarks.pageContextEventCount, 1);
+    },
+  },
+  {
     name: 'AntD select option click is synthesized even when a combobox click was recorded nearby',
     run: () => {
       const wallTime = Date.now() - 2000;
@@ -4995,6 +5190,199 @@ test('demo', async ({ page }) => {
       const code = generateBusinessFlowPlaywrightCode(flow);
       assert(code.includes('新建IPv4地址池'), 'repeat field locators should stay scoped to the modal opened by the create step');
       assert(code.includes('filter({ hasText: "新建IPv4地址池" })'), 'repeat select trigger should use modal-scoped locator');
+    },
+  },
+  {
+    name: 'select field locator ignores polluted action test id and uses field label',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          action: 'select',
+          target: {
+            role: 'combobox',
+            label: 'WAN口',
+            name: 'WAN口',
+            displayName: 'WAN口',
+            testId: 'site-ip-address-pool-create-button',
+            scope: {
+              form: {
+                testId: 'site-ip-address-pool-create-button',
+                label: 'WAN口',
+                name: 'WAN口',
+              },
+            },
+          },
+          value: 'xtest16:WAN1',
+          context: {
+            eventId: 'ctx-wan-option',
+            capturedAt: 1000,
+            before: {
+              form: { label: 'WAN口', name: 'wan' },
+              target: {
+                tag: 'div',
+                role: 'option',
+                title: 'xtest16:WAN1',
+                text: 'xtest16:WAN1',
+                selectedOption: 'xtest16:WAN1',
+                normalizedText: 'xtest16:WAN1',
+                framework: 'procomponents',
+                controlType: 'select-option',
+                locatorQuality: 'semantic',
+              },
+              ui: {
+                library: 'pro-components',
+                component: 'select',
+                targetText: 'xtest16:WAN1',
+                form: {
+                  formKind: 'antd-form',
+                  formTitle: 'WAN配置',
+                  fieldKind: 'select',
+                  label: 'WAN口',
+                  name: 'wan',
+                },
+                overlay: { type: 'select-dropdown', visible: true },
+                option: { text: 'xtest16:WAN1', path: ['xtest16:WAN1'] },
+                locatorHints: [],
+                confidence: 0.86,
+                reasons: ['test fixture'],
+              },
+              dialog: { type: 'dropdown', visible: true },
+            },
+            after: {
+              dialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+              openedDialog: { type: 'modal', title: '新建IPv4地址池', visible: true },
+            },
+          },
+          assertions: [],
+        }],
+      };
+      const code = stepCodeBlock(generateBusinessFlowPlaywrightCode(flow), 's001');
+
+      assert(!code.includes('page.getByTestId("site-ip-address-pool-create-button")'), `polluted create-button test id must not become the select trigger\n${code}`);
+      assert(code.includes('filter({ hasText: "新建IPv4地址池" })'), 'select trigger should stay scoped to the dialog captured around the option click');
+      assert(code.includes('filter({ hasText: "WAN口" })'), 'select trigger should be found by the form field label');
+    },
+  },
+  {
+    name: 'TreeSelect placeholder display click is skipped before the real option',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            kind: 'recorded',
+            action: 'click',
+            target: {
+              role: 'combobox',
+              label: '发布范围',
+              name: 'combobox * 发布范围',
+              displayName: 'combobox * 发布范围',
+            },
+            context: {
+              eventId: 'ctx-scope-trigger',
+              capturedAt: 1000,
+              before: {
+                form: { label: '发布范围', name: 'scope' },
+                target: { tag: 'div', role: 'combobox', framework: 'antd', controlType: 'tree-select', locatorQuality: 'semantic' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            kind: 'recorded',
+            action: 'click',
+            target: {
+              role: 'combobox',
+              testId: 'network-resource-scope-tree',
+              name: '选择发布范围',
+              displayName: '选择发布范围',
+              scope: { form: { label: '发布范围', name: 'scope' } },
+            },
+            context: {
+              eventId: 'ctx-scope-placeholder',
+              capturedAt: 1050,
+              before: {
+                form: { label: '发布范围', name: 'scope' },
+                target: {
+                  tag: 'div',
+                  role: 'combobox',
+                  testId: 'network-resource-scope-tree',
+                  text: '选择发布范围',
+                  normalizedText: '选择发布范围',
+                  framework: 'antd',
+                  controlType: 'tree-select',
+                  locatorQuality: 'testid',
+                },
+                ui: {
+                  library: 'antd',
+                  component: 'tree-select',
+                  targetText: '选择发布范围',
+                  targetTestId: 'network-resource-scope-tree',
+                  form: { formKind: 'antd-form', fieldKind: 'tree-select', label: '发布范围', name: 'scope' },
+                  locatorHints: [],
+                  confidence: 0.8,
+                  reasons: ['test fixture'],
+                },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's003',
+            order: 3,
+            kind: 'recorded',
+            action: 'click',
+            target: {
+              role: 'treeitem',
+              text: '华东生产区',
+              displayName: '华东生产区',
+              scope: { form: { label: '发布范围', name: 'scope' } },
+            },
+            context: {
+              eventId: 'ctx-scope-option',
+              capturedAt: 1100,
+              before: {
+                dialog: { type: 'dropdown', visible: true },
+                form: { label: '发布范围', name: 'scope' },
+                target: {
+                  tag: 'div',
+                  role: 'treeitem',
+                  text: '华东生产区',
+                  normalizedText: '华东生产区',
+                  framework: 'antd',
+                  controlType: 'tree-select-option',
+                  locatorQuality: 'semantic',
+                },
+                ui: {
+                  library: 'antd',
+                  component: 'tree-select',
+                  targetText: '华东生产区',
+                  form: { formKind: 'antd-form', fieldKind: 'tree-select', label: '发布范围', name: 'scope' },
+                  overlay: { type: 'select-dropdown', visible: true },
+                  option: { text: '华东生产区', path: ['华东生产区'] },
+                  locatorHints: [],
+                  confidence: 0.86,
+                  reasons: ['test fixture'],
+                },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+
+      assert(!code.includes('const expectedText = "选择发布范围";'), `placeholder display must not be replayed as a selected option\n${code}`);
+      assert(!code.includes('toContainText("选择发布范围"'), 'placeholder display should not produce selected-value assertions');
+      assert(code.includes('华东生产区'), 'real TreeSelect option should still be replayed');
     },
   },
   {
@@ -5147,6 +5535,38 @@ test('demo', async ({ page }) => {
       assertEqual(synthetic.target?.testId, 'site-ip-port-pool-create-button');
       assertEqual(synthetic.sourceCode, `await page.getByTestId("site-ip-port-pool-create-button").click();`);
       assertEqual(synthetic.comment, '页面侧已捕获点击，并根据页面上下文自动补录为业务步骤。');
+    },
+  },
+  {
+    name: 'synthetic page context dedupe keeps same confirm text from different overlay scopes',
+    run: () => {
+      const wallTime = Date.now() - 2000;
+      const popconfirmOk = pageClickEventWithTarget('ctx-popconfirm-ok', wallTime, {
+        tag: 'button',
+        role: 'button',
+        text: '确 定',
+        normalizedText: '确 定',
+        framework: 'antd',
+        controlType: 'button',
+      } as ElementContext);
+      popconfirmOk.before.dialog = { type: 'popover', title: '删除此行？', visible: true };
+      const modalSubmit = pageClickEventWithTarget('ctx-modal-submit', wallTime + 300, {
+        tag: 'button',
+        role: 'button',
+        testId: 'wan-config-confirm',
+        text: '确 定',
+        normalizedText: '确 定',
+        framework: 'antd',
+        controlType: 'button',
+        locatorQuality: 'testid',
+      } as ElementContext);
+      modalSubmit.before.dialog = { type: 'modal', title: '编辑 WAN1 共享 WAN', visible: true };
+
+      const result = appendSyntheticPageContextStepsWithResult(createNamedFlow(), [popconfirmOk, modalSubmit]);
+
+      assertEqual(result.insertedStepIds.length, 2);
+      assertEqual(result.flow.steps.map(step => step.context?.eventId), ['ctx-popconfirm-ok', 'ctx-modal-submit']);
+      assertEqual(result.flow.steps[1].target?.testId, 'wan-config-confirm');
     },
   },
   {
@@ -6396,6 +6816,598 @@ test('demo', async ({ page }) => {
     },
   },
   {
+    name: 'modal confirm after synthesized popconfirm is not dropped as an echo click',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            action: 'click',
+            target: {
+              testId: 'wan-transport-row-delete-action',
+              displayName: 'Nova专线 default',
+              scope: { dialog: { type: 'modal', title: '编辑WAN2', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'a', testId: 'wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            action: 'click',
+            target: { role: 'tooltip', displayName: 'tooltip 确 定', name: 'tooltip 确 定' },
+            sourceCode: 'await page.locator(".ant-popover:not(.ant-popover-hidden)").last().getByRole("button", { name: /^(确定|确 定)$/ }).click();',
+            context: {
+              eventId: 'ctx-popconfirm-ok',
+              capturedAt: 1500,
+              before: {
+                dialog: { type: 'popover', title: '删除此行？', visible: true },
+                target: { tag: 'div', role: 'tooltip', framework: 'antd', controlType: 'button', text: '确 定' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: { role: 'button', displayName: 'button 确 定', name: '确 定' },
+            context: {
+              eventId: 'ctx-submit-opens-second-confirm',
+              capturedAt: 2000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { role: 'button', displayName: 'button 确 定', name: '确 定', scope: { dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } } },
+            context: {
+              eventId: 'ctx-second-confirm',
+              capturedAt: 2500,
+              before: {
+                dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      const opener = 'filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-config-confirm").click();';
+      const secondConfirm = 'filter({ hasText: "确定要配置WAN的传输网络？" }).last().getByRole("button", { name: /^(确定|确\\s*定)$/ }).click();';
+      const openerIndex = code.indexOf(opener);
+      const secondConfirmIndex = code.indexOf(secondConfirm);
+
+      assert(openerIndex >= 0, `modal confirm opener should remain after synthesized popconfirm\n${code}`);
+      assert(secondConfirmIndex > openerIndex, 'second modal confirmation should be emitted after the opener click');
+      assert(playbackCode.includes(opener), 'parser-safe playback should keep the modal confirm opener');
+
+      const lateContextFlow: BusinessFlow = {
+        ...flow,
+        steps: flow.steps.map(step => step.id === 's003' ? {
+          ...step,
+          context: {
+            ...step.context!,
+            before: { target: step.context!.before.target },
+          },
+        } : step),
+      };
+      const lateContextCode = generateBusinessFlowPlaywrightCode(lateContextFlow);
+      assert(lateContextCode.includes('await page.getByTestId("wan-config-confirm").click();'), `modal confirm opener should not be treated as a popconfirm echo when dialog context arrives late\n${lateContextCode}`);
+    },
+  },
+  {
+    name: 'persistent dialog opener survives duplicate confirm echo skip',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              testId: 'wan-transport-row-delete-action',
+              displayName: 'Nova专线 default',
+              scope: { dialog: { type: 'modal', title: '编辑WAN2', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'a', testId: 'wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { testId: 'wan-config-confirm', displayName: '确定' },
+            context: {
+              eventId: 'ctx-submit-opens-second-confirm',
+              capturedAt: 2000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', testId: 'wan-config-confirm', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's005',
+            order: 5,
+            action: 'click',
+            target: { testId: 'wan-config-confirm', displayName: 'testId wan-config-confirm' },
+            context: {
+              eventId: 'ctx-submit-echo',
+              capturedAt: 2050,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', testId: 'wan-config-confirm', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's006',
+            order: 6,
+            action: 'click',
+            target: {
+              role: 'button',
+              displayName: 'button 确 定',
+              name: '确 定',
+              scope: { dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-second-confirm',
+              capturedAt: 2500,
+              before: {
+                dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      const opener = 'filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-config-confirm").click();';
+      const secondConfirm = 'filter({ hasText: "确定要配置WAN的传输网络？" }).last().getByRole("button", { name: /^(确定|确\\s*定)$/ }).click();';
+      const openerIndex = code.indexOf('// s004');
+      const secondConfirmIndex = code.indexOf('// s006');
+
+      assert(openerIndex >= 0, `persistent dialog opener should keep its own emitted step\n${code}`);
+      assert(code.includes(opener), `persistent dialog opener should be scoped to its source dialog\n${code}`);
+      assert(!code.includes('visible Popconfirm before confirming: s004'), `persistent dialog opener should not get a Popconfirm preflight\n${code}`);
+      assert(secondConfirmIndex > openerIndex, `second modal confirm should run after the opener\n${code}`);
+      assert(code.includes(secondConfirm), `second modal confirm should target the dialog opened by s004\n${code}`);
+      assert(!code.includes('// s005'), `duplicate confirm echo should still be skipped\n${code}`);
+      assert(playbackCode.includes(opener), `parser-safe playback should also keep the persistent dialog opener\n${playbackCode}`);
+      assert(!playbackCode.includes('// s005'), `parser-safe playback should skip the duplicate echo\n${playbackCode}`);
+    },
+  },
+  {
+    name: 'persistent dialog opener ignores stale popconfirm target scope',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              testId: 'wan-transport-row-delete-action',
+              role: 'link',
+              displayName: 'wan-transport-row-delete-action',
+              scope: { table: { rowKey: 'private', rowText: 'Nova专线 default' } },
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                target: { tag: 'a', role: 'link', testId: 'wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { openedDialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: {
+              testId: 'wan-config-confirm',
+              role: 'tooltip',
+              name: '确 定',
+              text: '确 定',
+              displayName: '确 定',
+              scope: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-submit-opens-second-confirm',
+              capturedAt: 2000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's006',
+            order: 6,
+            action: 'click',
+            target: {
+              role: 'button',
+              displayName: 'button 确 定',
+              name: '确 定',
+              scope: { dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-second-confirm',
+              capturedAt: 2500,
+              before: {
+                dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      const opener = 'filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-config-confirm").click();';
+
+      assert(code.includes('// s004'), `persistent dialog opener with stale popconfirm scope should still be emitted\n${code}`);
+      assert(code.includes(opener), `persistent dialog opener should use the before modal test id scope, not the stale popconfirm scope\n${code}`);
+      assert(!stepCodeBlock(code, 's004').includes('.ant-popover'), `persistent dialog opener should not use Popconfirm locator candidate\n${code}`);
+      assert(playbackCode.includes(opener), `parser-safe playback should keep the before modal test id scope\n${playbackCode}`);
+      assert(!stepCodeBlock(playbackCode, 's004').includes('.ant-popover'), `parser-safe playback should not use stale Popconfirm scope\n${playbackCode}`);
+    },
+  },
+  {
+    name: 'popconfirm echo that restores a modal is still skipped before modal submit',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              testId: 'wan-transport-row-delete-action',
+              role: 'link',
+              displayName: 'wan-transport-row-delete-action',
+              scope: { table: { rowKey: 'private', rowText: 'Nova专线 default' } },
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                target: { tag: 'a', role: 'link', testId: 'wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { openedDialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: {
+              role: 'tooltip',
+              name: '确 定',
+              text: '确 定',
+              displayName: '确 定',
+              scope: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-popconfirm-ok',
+              capturedAt: 1500,
+              before: {
+                dialog: { type: 'popover', title: '删除此行？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '编辑WAN2', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's005',
+            order: 5,
+            action: 'click',
+            target: {
+              testId: 'wan-config-confirm',
+              role: 'button',
+              name: '确 定',
+              text: '确 定',
+              displayName: '确 定',
+              scope: { dialog: { type: 'modal', title: '编辑WAN2', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-submit-opens-second-confirm',
+              capturedAt: 2000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', role: 'button', testId: 'wan-config-confirm', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      const modalSubmit = 'filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-config-confirm").click();';
+
+      assert(!code.includes('// s004'), `explicit Popconfirm confirmation should be skipped because s003 already emits it\n${code}`);
+      assert(code.includes('// s005'), `modal submit after the Popconfirm should remain\n${code}`);
+      assert(code.includes(modalSubmit), `modal submit should target wan-config-confirm in the restored modal\n${code}`);
+      assert(!playbackCode.includes('// s004'), `parser-safe playback should skip the explicit Popconfirm confirmation\n${playbackCode}`);
+      assert(playbackCode.includes(modalSubmit), `parser-safe playback should keep the modal submit\n${playbackCode}`);
+    },
+  },
+  {
+    name: 'explicit popconfirm echo with stale modal context is skipped before persistent dialog opener',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              testId: 'wan-transport-row-delete-action',
+              displayName: 'Nova专线 default',
+              scope: { dialog: { type: 'modal', title: '编辑WAN2', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'a', testId: 'wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { role: 'tooltip', displayName: 'tooltip 确 定', name: 'tooltip 确 定' },
+            sourceCode: 'await page.locator(".ant-popover:not(.ant-popover-hidden):not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active)").filter({ hasText: "删除此行？" }).getByRole("button", { name: /^(确定|确 定)$/ }).click();',
+            context: {
+              eventId: 'ctx-popconfirm-ok',
+              capturedAt: 1500,
+              before: {
+                dialog: { type: 'modal', title: '删除此行？', visible: true },
+                target: { tag: 'div', role: 'tooltip', framework: 'antd', controlType: 'button', text: '确 定' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's005',
+            order: 5,
+            action: 'click',
+            target: { testId: 'wan-config-confirm', displayName: '确定' },
+            context: {
+              eventId: 'ctx-submit-opens-second-confirm',
+              capturedAt: 2000,
+              before: {
+                dialog: { type: 'modal', title: '编辑WAN2', visible: true },
+                target: { tag: 'button', testId: 'wan-config-confirm', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+              after: { openedDialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's006',
+            order: 6,
+            action: 'click',
+            target: {
+              role: 'button',
+              displayName: 'button 确 定',
+              name: '确 定',
+              scope: { dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true } },
+            },
+            context: {
+              eventId: 'ctx-second-confirm',
+              capturedAt: 2500,
+              before: {
+                dialog: { type: 'modal', title: '确定要配置WAN的传输网络？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      const opener = 'filter({ hasText: "编辑WAN2" }).last().getByTestId("wan-config-confirm").click();';
+
+      assert(!code.includes('// s004'), `explicit Popconfirm echo should be skipped even if context labels it as a modal\n${code}`);
+      assert(code.includes('// s005'), `persistent dialog opener after popconfirm should still be emitted\n${code}`);
+      assert(code.includes(opener), `persistent dialog opener should remain scoped to the original modal\n${code}`);
+      assert(!playbackCode.includes('// s004'), `parser-safe playback should also skip the explicit Popconfirm echo\n${playbackCode}`);
+      assert(playbackCode.includes(opener), `parser-safe playback should keep the persistent dialog opener\n${playbackCode}`);
+    },
+  },
+  {
+    name: 'stable modal confirm raw test id is not skipped after synthesized popconfirm confirm',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              testId: 'ha-wan-transport-row-delete-action',
+              displayName: 'HS Internet default',
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                target: { tag: 'a', testId: 'ha-wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { dialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { role: 'tooltip', displayName: 'tooltip 确 定', name: 'tooltip 确 定' },
+            sourceCode: 'await page.locator(".ant-popover:not(.ant-popover-hidden):not(.ant-zoom-big-leave):not(.ant-zoom-big-leave-active)").filter({ hasText: "删除此行？" }).getByRole("button", { name: /^(确定|确 定)$/ }).click();',
+            context: {
+              eventId: 'ctx-popconfirm-ok',
+              capturedAt: 1500,
+              before: {
+                dialog: { type: 'popover', title: '删除此行？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's005',
+            order: 5,
+            action: 'click',
+            target: { role: 'button', displayName: '确 定' },
+            rawAction: { name: 'click', selector: 'internal:testid=[data-testid="wan-config-confirm"s]' } as any,
+            sourceCode: 'await page.locator("body").getByTestId("wan-config-confirm").click();',
+            assertions: [],
+          },
+          {
+            id: 's006',
+            order: 6,
+            action: 'click',
+            target: { testId: 'site-save-button', displayName: '保存配置' },
+            rawAction: { name: 'click', selector: 'internal:testid=[data-testid="site-save-button"s] >> nth=1' } as any,
+            sourceCode: 'await page.getByTestId("site-save-button").nth(1).click();',
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+
+      assert(!code.includes('// s004'), `explicit Popconfirm echo should be skipped because s003 already emits it\n${code}`);
+      assert(code.includes('// s005'), `raw test id modal confirm should remain after synthesized Popconfirm confirm\n${code}`);
+      assert(code.indexOf('// s005') < code.indexOf('// s006'), `modal confirm must be emitted before page save\n${code}`);
+      assert(playbackCode.includes('// s005'), `parser-safe playback should keep raw test id modal confirm\n${playbackCode}`);
+    },
+  },
+  {
+    name: 'stable modal confirm target raw test id is not skipped after emitted popconfirm confirm',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            action: 'click',
+            target: {
+              testId: 'ha-wan-transport-row-delete-action',
+              displayName: 'HS Internet default',
+            },
+            context: {
+              eventId: 'ctx-delete',
+              capturedAt: 1000,
+              before: {
+                target: { tag: 'a', testId: 'ha-wan-transport-row-delete-action', framework: 'antd', controlType: 'link' },
+              },
+              after: { openedDialog: { type: 'popover', title: '删除此行？', visible: true } },
+            },
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            action: 'click',
+            target: { role: 'tooltip', displayName: 'tooltip 确 定', name: 'tooltip 确 定' },
+            context: {
+              eventId: 'ctx-popconfirm-ok',
+              capturedAt: 1500,
+              before: {
+                dialog: { type: 'popover', title: '删除此行？', visible: true },
+                target: { tag: 'button', role: 'button', text: '确 定', framework: 'antd', controlType: 'button' },
+              },
+            },
+            assertions: [],
+          },
+          {
+            id: 's003',
+            order: 3,
+            action: 'click',
+            target: {
+              role: 'button',
+              displayName: '确 定',
+              raw: { selector: 'internal:testid=[data-testid="wan-config-confirm"s]' },
+            },
+            rawAction: { name: 'click' } as any,
+            assertions: [],
+          },
+          {
+            id: 's004',
+            order: 4,
+            action: 'click',
+            target: { testId: 'site-save-button', displayName: '保存配置' },
+            rawAction: { name: 'click', selector: 'internal:testid=[data-testid="site-save-button"s] >> nth=1' } as any,
+            sourceCode: 'await page.getByTestId("site-save-button").nth(1).click();',
+            assertions: [],
+          },
+        ],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+
+      assert(!code.includes('// s002'), `explicit Popconfirm echo should still be skipped\n${code}`);
+      assert(code.includes('// s003'), `modal confirm with target raw test id must not be skipped as Popconfirm echo\n${code}`);
+      assert(code.includes('getByTestId("wan-config-confirm").click();'), `modal confirm should emit from target raw test id evidence\n${code}`);
+      assert(code.indexOf('// s003') < code.indexOf('// s004'), `modal confirm must stay before page save\n${code}`);
+    },
+  },
+  {
     name: 'AntD delete test id skips explicit popconfirm confirm after repeated opener echo clicks',
     run: () => {
       const flow: BusinessFlow = {
@@ -6830,6 +7842,38 @@ test('demo', async ({ page }) => {
 
       assertEqual(withSynthetic.steps.length, 1);
       assertEqual(withSynthetic.steps[0].target?.name, '新建');
+    },
+  },
+  {
+    name: 'page context click with matching projected test id is not synthesized when context is polluted',
+    run: () => {
+      const wallTime = Date.now();
+      const initial = mergeActionsIntoFlow(undefined, [
+        testIdClickAction('real-create-item', wallTime),
+      ], [], {});
+      initial.steps[0].context = {
+        eventId: 'ctx-polluted-modal-save',
+        capturedAt: wallTime,
+        before: {
+          dialog: { type: 'modal', title: '新建条目', visible: true },
+          target: { tag: 'button', role: 'button', text: '保 存', normalizedText: '保 存', framework: 'antd', controlType: 'button' },
+        },
+      };
+      const event = pageClickEventWithTarget('ctx-real-create-item', wallTime + 500, {
+        tag: 'button',
+        role: 'button',
+        testId: 'real-create-item',
+        text: '新建条目',
+        normalizedText: '新建条目',
+        framework: 'antd',
+        controlType: 'button',
+        locatorQuality: 'testid',
+      } as ElementContext);
+      const result = appendSyntheticPageContextStepsWithResult(initial, [event]);
+
+      assertEqual(result.insertedStepIds, []);
+      assertEqual(result.flow.steps.map(step => step.target?.testId), ['real-create-item']);
+      assertEqual(result.skippedEventIds, ['ctx-real-create-item']);
     },
   },
   {
@@ -7422,6 +8466,68 @@ test('demo', async ({ page }) => {
 
       assert(loopCloseIndex > 0, 'repeat loop should be emitted');
       assert(postRepeatStepIndex > loopCloseIndex, 'post-repeat step should be emitted after the loop closes');
+    },
+  },
+  {
+    name: 'repeat segment keeps navigation setup outside the loop body',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [
+          {
+            id: 's001',
+            order: 1,
+            kind: 'recorded',
+            action: 'navigate',
+            url: 'http://127.0.0.1:3217/antd-pro-form-fields.html',
+            assertions: [],
+          },
+          {
+            id: 's002',
+            order: 2,
+            kind: 'recorded',
+            action: 'click',
+            target: { testId: 'site-ip-address-pool-create-button' },
+            rawAction: { action: { name: 'click', selector: 'internal:testid=[data-testid="site-ip-address-pool-create-button"s]' } },
+            assertions: [],
+          },
+          {
+            id: 's003',
+            order: 3,
+            kind: 'recorded',
+            action: 'fill',
+            target: { placeholder: '地址池名称' },
+            value: 'test1',
+            rawAction: { action: { name: 'fill', selector: 'internal:attr=[placeholder="地址池名称"s]', text: 'test1' } },
+            assertions: [],
+          },
+        ],
+        repeatSegments: [{
+          id: 'repeat-with-nav',
+          name: '批量创建IPv4地址池',
+          stepIds: ['s001', 's002', 's003'],
+          parameters: [{
+            id: 'pool-name',
+            sourceStepId: 's003',
+            variableName: 'poolName',
+            label: '地址池名称',
+            currentValue: 'test1',
+            enabled: true,
+          }],
+          rows: [
+            { id: 'row-1', values: { 'pool-name': 'test1' } },
+            { id: 'row-2', values: { 'pool-name': 'test2' } },
+          ],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        }],
+      };
+      const code = generateBusinessFlowPlaywrightCode(flow);
+      const loopStart = code.indexOf('for (const row of');
+      const gotoIndex = code.indexOf('page.goto("http://127.0.0.1:3217/antd-pro-form-fields.html")');
+
+      assert(gotoIndex >= 0 && loopStart > gotoIndex, `navigation setup should be emitted before the repeat loop\n${code}`);
+      assert(!code.slice(loopStart).includes('page.goto("http://127.0.0.1:3217/antd-pro-form-fields.html")'), 'repeat loop body should not reset the page for each row');
     },
   },
   {
@@ -8262,6 +9368,7 @@ test('demo', async ({ page }) => {
       const code = stepCodeBlock(generateBusinessFlowPlaywrightCode(flow), 's001');
       assert(code.includes('await page.getByTestId("real-create-item").click();'), 'dialog opener should click the page-level create button');
       assert(!code.includes('filter({ hasText: "新建条目" }).getByTestId("real-create-item")'), 'dialog opener must not be scoped into the dialog it opens');
+      assert(!code.includes('BAGLC safety guard requires exactly one visible modal/drawer root before a dialog action'), 'dialog opener should not require the opened modal before the click');
 
       const targetScopeOnly: BusinessFlow = {
         ...flow,
@@ -8280,6 +9387,39 @@ test('demo', async ({ page }) => {
       const targetScopeOnlyCode = stepCodeBlock(generateBusinessFlowPlaywrightCode(targetScopeOnly), 's001');
       assert(targetScopeOnlyCode.includes('await page.getByTestId("real-create-item").click();'), 'dialog opener should stay page-level when only target scope carries the opened dialog');
       assert(!targetScopeOnlyCode.includes('filter({ hasText: "新建条目" }).getByTestId("real-create-item")'), 'target-scope-only opener must not be scoped into the dialog it opens');
+      assert(!targetScopeOnlyCode.includes('BAGLC safety guard requires exactly one visible modal/drawer root before a dialog action'), 'target-scope-only opener should not preflight the opened modal');
+
+      const sourceOnlyOpener: BusinessFlow = {
+        ...flow,
+        steps: flow.steps.map(step => ({
+          ...step,
+          target: {
+            role: 'button',
+            displayName: '保存',
+            scope: step.target?.scope,
+          },
+          sourceCode: `await page.getByTestId('real-create-item').click();`,
+        })),
+      };
+      const sourceOnlyCode = stepCodeBlock(generateBusinessFlowPlaywrightCode(sourceOnlyOpener), 's001');
+      assert(sourceOnlyCode.includes('await page.getByTestId("real-create-item").click();') || sourceOnlyCode.includes('await page.getByTestId(\'real-create-item\').click();'), `recorded source test id should keep page-level opener click\n${sourceOnlyCode}`);
+      assert(!sourceOnlyCode.includes('BAGLC safety guard requires exactly one visible modal/drawer root before a dialog action'), 'source-only opener should not preflight the opened modal');
+
+      const pollutedContextOpener: BusinessFlow = {
+        ...sourceOnlyOpener,
+        steps: sourceOnlyOpener.steps.map(step => ({
+          ...step,
+          context: {
+            ...step.context!,
+            before: {
+              ...step.context!.before,
+              dialog: { type: 'modal', title: '新建条目', visible: true },
+            },
+          },
+        })),
+      };
+      const pollutedContextCode = stepCodeBlock(generateBusinessFlowPlaywrightCode(pollutedContextOpener), 's001');
+      assert(!pollutedContextCode.includes('BAGLC safety guard requires exactly one visible modal/drawer root before a dialog action'), 'opener-like test id should not preflight a polluted same-dialog context');
     },
   },
   {
@@ -8692,6 +9832,50 @@ test('demo', async ({ page }) => {
       assert(code.includes('s001 has no runnable Playwright action source'), 'structural container clicks should be documented but not replayed');
       assert(!code.includes('getByTestId("site-global-ip-pools-section").click') && !code.includes("getByTestId('site-global-ip-pools-section').click"), 'structural container test id should not be emitted as a click target');
       assert(code.includes('getByTestId("site-ip-port-pool-create-button").click'), 'nearby concrete action controls should still be replayed');
+    },
+  },
+  {
+    name: 'code preview suppresses broad label-only recorder clicks before concrete controls',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          sourceActionIds: ['a001'],
+          action: 'click',
+          target: {
+            name: '增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除',
+            displayName: '增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除',
+          },
+          rawAction: {
+            action: {
+              name: 'click',
+              selector: 'internal:label="增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除"i',
+            },
+          },
+          sourceCode: `await page.getByLabel("增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除").click();`,
+          assertions: [],
+        }, {
+          id: 's002',
+          order: 2,
+          kind: 'recorded',
+          sourceActionIds: ['a002'],
+          action: 'click',
+          target: {
+            testId: 'wan-transport-add-button',
+            text: '增加传输网络',
+          },
+          rawAction: testIdClickAction('wan-transport-add-button'),
+          assertions: [],
+        }],
+      };
+
+      const code = generateBusinessFlowPlaybackCode(flow);
+      assert(code.includes('s001 has no runnable Playwright action source'), 'broad label-only clicks should be documented but not replayed');
+      assert(!code.includes('getByLabel("增加传输网络 传输网络 WAN 标签 操作 Nova 公网 controller 编辑 删除")'), 'broad page label should not become a runnable locator');
+      assert(code.includes('getByTestId("wan-transport-add-button").click'), 'the following concrete button click should still be replayed');
     },
   },
   {
@@ -11090,6 +12274,46 @@ test('demo', async ({ page }) => {
       assert(executableStepCode.includes('locator(".ant-form-item").filter({ hasText: "IP地址池" }).locator(".ant-select-selector, .ant-cascader-picker, .ant-select").first().click();'), 'tooltip suffix should be stripped before locating the ProFormSelect trigger');
       assert(!executableStepCode.includes('question-circle'), 'runtime trigger should not depend on tooltip text');
       assert(!executableStepCode.includes('getByRole("combobox"') && !executableStepCode.includes('getByRole(\'combobox\''), 'runtime trigger should not use the brittle combobox role');
+    },
+  },
+  {
+    name: 'AntD text input with tooltip suffix uses normalized field label',
+    run: () => {
+      const flow: BusinessFlow = {
+        ...createNamedFlow(),
+        steps: [{
+          id: 's001',
+          order: 1,
+          kind: 'recorded',
+          sourceActionIds: ['a001'],
+          action: 'fill',
+          value: 'test1',
+          target: {
+            role: 'textbox',
+            name: '* 策略名称 form-help-outlined',
+            displayName: '* 策略名称 form-help-outlined',
+          },
+          rawAction: {
+            action: {
+              name: 'fill',
+              selector: 'internal:role=textbox[name="* 策略名称 form-help-outlined"i]',
+              text: 'test1',
+            },
+          },
+          sourceCode: `await page.getByRole("textbox", { name: "* 策略名称 form-help-outlined" }).fill("test1");`,
+          assertions: [],
+        }],
+      };
+
+      const exportedCode = generateBusinessFlowPlaywrightCode(flow);
+      const playbackCode = generateBusinessFlowPlaybackCode(flow);
+      for (const code of [exportedCode, playbackCode]) {
+        const firstStep = stepCodeBlock(code, 's001');
+        const executableStepCode = firstStep.split('\n').slice(1).join('\n');
+        assert(executableStepCode.includes('getByLabel("策略名称").fill("test1");'), 'tooltip suffix should be stripped before locating the text input');
+        assert(!executableStepCode.includes('form-help-outlined'), 'text input replay should not depend on tooltip text');
+        assert(!executableStepCode.includes('getByRole("textbox"') && !executableStepCode.includes('getByRole(\'textbox\''), 'text input replay should not preserve the brittle textbox role source');
+      }
     },
   },
   {

@@ -30,7 +30,7 @@ export function emitRepeatSegment(lines: string[], flow: BusinessFlow, segment: 
   lines.push(`  // 循环片段: ${segment.name}`);
   lines.push(`  const ${segmentDataName(segment)} = ${JSON.stringify(data, null, 2).replace(/\n/g, '\n  ')};`);
   lines.push(`  for (const row of ${segmentDataName(segment)}) {`);
-  const segmentSteps = flow.steps.filter(step => segment.stepIds.includes(step.id));
+  const segmentSteps = repeatExecutableSteps(flow, segment);
   const segmentHasNonPlaceholderStep = segmentSteps.some(step => !hooks.isPlaceholderSelectOptionClick(step));
   const skipPolicy = createReplaySkipPolicy('exported', hooks);
   let previousEmittedStep: FlowStep | undefined;
@@ -52,14 +52,14 @@ export function emitRepeatSegment(lines: string[], flow: BusinessFlow, segment: 
 }
 
 export function firstSegmentStepId(flow: BusinessFlow, segment: FlowRepeatSegment) {
-  return flow.steps.find(step => segment.stepIds.includes(step.id))?.id;
+  return repeatExecutableSteps(flow, segment)[0]?.id || flow.steps.find(step => segment.stepIds.includes(step.id))?.id;
 }
 
 export function emitExpandedRepeatSegment(lines: string[], flow: BusinessFlow, segment: FlowRepeatSegment, hooks: RepeatRendererHooks, options: RepeatEmitStepOptions = {}) {
   const rows = segment.rows.length ? segment.rows : [{ id: 'row-1', values: {} }];
   rows.forEach((row, rowIndex) => {
     lines.push(`  // 循环片段 ${segment.name}: 第 ${rowIndex + 1} 行`);
-    const segmentSteps = flow.steps.filter(step => segment.stepIds.includes(step.id));
+    const segmentSteps = repeatExecutableSteps(flow, segment);
     const segmentHasNonPlaceholderStep = segmentSteps.some(step => !hooks.isPlaceholderSelectOptionClick(step));
     const skipPolicy = createReplaySkipPolicy('parserSafe', hooks);
     let previousEmittedStep: FlowStep | undefined;
@@ -77,6 +77,11 @@ export function emitExpandedRepeatSegment(lines: string[], flow: BusinessFlow, s
     if (segment.assertionTemplate)
       lines.push(`  // template assertion: ${replaceTemplateValuesWithRow(segment.assertionTemplate.description, segment, row.values)}`);
   });
+}
+
+function repeatExecutableSteps(flow: BusinessFlow, segment: FlowRepeatSegment) {
+  const steps = flow.steps.filter(step => segment.stepIds.includes(step.id));
+  return steps.some(step => step.action !== 'navigate') ? steps.filter(step => step.action !== 'navigate') : steps;
 }
 
 function emitSkippedPlaceholderSelectOption(lines: string[], step: FlowStep, indent: string) {
