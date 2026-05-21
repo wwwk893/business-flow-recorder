@@ -30,7 +30,7 @@ export function safeFilename(value: string, fallback: string) {
   const trimmed = value.trim();
   const base = trimmed || fallback;
   return base
-      .replace(/[^a-z0-9._-]+/gi, '-')
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
       .replace(/^-+|-+$/g, '')
       .slice(0, 120) || fallback;
 }

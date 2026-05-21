@@ -52,7 +52,8 @@ import { toCompactFlow } from './flow/compactExporter';
 import { prepareBusinessFlowForExport } from './flow/exportSanitizer';
 import { appendTerminalStateAssertions } from './flow/terminalAssertions';
 import { flowStats } from './flow/display';
-import { downloadText, safeFilename } from './flow/download';
+import { downloadText } from './flow/download';
+import { exportDraftFilenameBase } from './flow/exportFilename';
 import { redactBusinessFlow } from './flow/redactor';
 import { deleteFlowDraft, deleteFlowRecord, listFlowRecords, loadLatestFlowDraft, saveFlowDraft, saveFlowRecord } from './flow/storage';
 import { filterPageContextEventsForCapture, isPageContextEventWithinCapture } from './flow/pageContextCapture';
@@ -2112,8 +2113,8 @@ export const CrxRecorder: React.FC = ({
     if (!hasEnabledAssertion(flowWithCode) && !window.confirm('当前流程还没有启用断言，仍然导出吗？'))
       return;
 
+    const baseFilename = exportDraftFilenameBase(flowWithCode);
     const exportFlow = settings.redactSensitiveData === false ? flowWithCode : redactBusinessFlow(flowWithCode);
-    const baseFilename = safeFilename(exportFlow.flow.id || exportFlow.flow.name, 'business-flow');
 
     if (format === 'json') {
       downloadText(`${baseFilename}.business-flow.json`, JSON.stringify(exportFlow, null, 2), 'application/json');

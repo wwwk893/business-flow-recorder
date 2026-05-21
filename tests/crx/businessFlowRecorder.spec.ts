@@ -205,16 +205,18 @@ test('records a real AntD user business flow through the plugin UI, exports it, 
   await expect(recorderPage.locator('.export-review-panel')).toContainText('P1');
   await expect(recorderPage.locator('.export-review-panel')).toContainText('脱敏开启');
 
-  const exportedJson = await downloadTextAfterClick(
+  const exportedJsonArtifact = await downloadArtifactAfterClick(
       recorderPage,
       recorderPage.getByRole('button', { name: '导出流程 JSON' }).last(),
   );
-  const exportedYaml = await downloadTextAfterClick(
+  const exportedYamlArtifact = await downloadArtifactAfterClick(
       recorderPage,
       recorderPage.getByRole('button', { name: '导出紧凑 YAML' }).last(),
   );
+  expect(exportedJsonArtifact.filename).toBe('draft-AntD-用户流程-E2E.business-flow.json');
+  expect(exportedYamlArtifact.filename).toBe('draft-AntD-用户流程-E2E.compact-flow.yaml');
 
-  const flow = JSON.parse(exportedJson);
+  const flow = JSON.parse(exportedJsonArtifact.text);
   expect(flow.flow.name).toBe('AntD 用户流程 E2E');
   expect(flow.steps.length).toBeGreaterThanOrEqual(4);
   expect(flow.steps.some((step: any) => step.target?.testId === 'create-user-btn')).toBeTruthy();
@@ -223,8 +225,8 @@ test('records a real AntD user business flow through the plugin UI, exports it, 
   expect(flow.artifacts.playwrightCode).toMatch(/getByRole\(["']textbox["'],\s*\{\s*name:\s*["']\*?\s*用户名["']|getByLabel\(["']用户名["']\)/);
   expect(flow.artifacts.playwrightCode).toContain('审计员');
   expect(flow.artifacts.playwrightCode).toMatch(/modal-confirm|getByRole\(["']button["'],\s*\{\s*name:\s*["']确\s*定["']/);
-  expect(exportedYaml).toContain('AntD 用户流程 E2E');
-  expect(exportedYaml).toMatch(/modal-confirm|确 定|确定|审计员/);
+  expect(exportedYamlArtifact.text).toContain('AntD 用户流程 E2E');
+  expect(exportedYamlArtifact.text).toMatch(/modal-confirm|确 定|确定|审计员/);
 
   await replayGeneratedPlaywrightCode(context, flow.artifacts.playwrightCode, test.info(), {
     verify: async replayPage => {
@@ -931,17 +933,25 @@ async function continueOpenedRecord(recorderPage: Page) {
 }
 
 async function downloadTextAfterClick(recorderPage: Page, trigger: ReturnType<Page['locator']>) {
+  return (await downloadArtifactAfterClick(recorderPage, trigger)).text;
+}
+
+async function downloadArtifactAfterClick(recorderPage: Page, trigger: ReturnType<Page['locator']>) {
   const [download] = await Promise.all([
     recorderPage.waitForEvent('download'),
     trigger.click(),
   ]);
   const stream = await download.createReadStream();
-  return await new Promise<string>((resolve, reject) => {
+  const text = await new Promise<string>((resolve, reject) => {
     let text = '';
     stream.on('data', chunk => text += chunk.toString());
     stream.on('end', () => resolve(text));
     stream.on('error', reject);
   });
+  return {
+    filename: download.suggestedFilename(),
+    text,
+  };
 }
 
 function writeGeneratedReplayDiagnostic(testInfo: TestInfo, name: string, flow: any) {
