@@ -24,12 +24,12 @@ export const ExportReviewPanel: React.FC<{
   redactionEnabled: boolean;
   onExportJson: () => void;
   onExportYaml: () => void;
-  onOpenReplayCode: () => void;
+  onOpenCodePreview: () => void;
   onEditFlow: () => void;
   onContinueRecording: () => void;
   onAddAssertion: (stepId: string) => void;
   onOpenSettings: () => void;
-}> = ({ flow, redactionEnabled, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onContinueRecording, onAddAssertion, onOpenSettings }) => {
+}> = ({ flow, redactionEnabled, onExportJson, onExportYaml, onOpenCodePreview, onEditFlow, onContinueRecording, onAddAssertion, onOpenSettings }) => {
   const [format, setFormat] = React.useState<ExportFormat>('json');
   const stats = flowStats(flow);
   const repeatStats = repeatSegmentStats(flow);
@@ -61,14 +61,13 @@ export const ExportReviewPanel: React.FC<{
       return () => onAddAssertion(firstMissingAssertionStep.id);
     if (item.id === 'redaction-disabled')
       return onOpenSettings;
-    if (item.id === 'replay-code-ready')
-      return onOpenReplayCode;
+    if (item.id === 'export-assets-ready')
+      return onOpenCodePreview;
     return undefined;
-  }, [firstMissingAssertionStep, onAddAssertion, onContinueRecording, onEditFlow, onOpenReplayCode, onOpenSettings]);
+  }, [firstMissingAssertionStep, onAddAssertion, onContinueRecording, onEditFlow, onOpenCodePreview, onOpenSettings]);
 
   return <section className='export-stage-panel export-review-panel' aria-label='导出前检查'>
     <span className='sr-only'>导出前复核：{flow.flow.name}</span>
-    <span className='sr-only'>回放 CTA</span>
     <span className='sr-only'>{redactionEnabled ? '脱敏开启' : '脱敏关闭'}</span>
     <div className='stats-row export-summary-row' aria-label='导出摘要'>
       <div><strong>{stats.stepCount}</strong><span>步骤</span></div>
@@ -79,7 +78,7 @@ export const ExportReviewPanel: React.FC<{
 
     <div className='section export-check-section'>
       <div className='section-title'>
-        <strong>回放 / 导出检查</strong>
+        <strong>导出检查</strong>
         <span>{p0Count ? 'P0 先处理，P1 导出前确认' : p1Count ? 'P1 导出前确认' : '检查通过，可以导出'}</span>
       </div>
       <div className='review-stack'>
@@ -110,7 +109,7 @@ export const ExportReviewPanel: React.FC<{
           </div>
           <div className='soft-card export-guidance-card'>
             <strong>建议流程</strong>
-            <span>先通过顶部回放确认回放路径，再导出业务流程 JSON 或紧凑 YAML。</span>
+            <span>导出业务流程 JSON 或紧凑 YAML 后，交给外部 recorded-flow runner 或 Codex agent task 运行验证。</span>
           </div>
         </div>
       </div>
@@ -146,7 +145,7 @@ function buildExportRisks(flow: BusinessFlow, redactionEnabled: boolean): Export
       id: 'missing-assertions',
       level: 'p1',
       title: `${stats.missingAssertionCount} 个关键步骤缺少断言`,
-      detail: '可以继续导出，但回放只能确认动作执行，不能确认业务结果。',
+      detail: '可以继续导出，但外部 runner 需要断言才能确认业务结果。',
       action: '去补齐',
     });
   }
@@ -164,16 +163,16 @@ function buildExportRisks(flow: BusinessFlow, redactionEnabled: boolean): Export
       id: 'repeat-no-params',
       level: 'p1',
       title: '存在循环片段但参数不足',
-      detail: '循环仍可导出，但不会形成真正的数据驱动回放。',
+      detail: '循环仍可导出，但不会形成真正的数据驱动脚本。',
     });
   }
 
   risks.push({
-    id: 'replay-code-ready',
+    id: 'export-assets-ready',
     level: 'ok',
-    title: stats.stepCount ? '回放代码已生成' : '回放代码等待步骤',
-    detail: stats.stepCount ? `当前包含 ${stats.stepCount} 个步骤、${stats.assertionCount} 个启用断言。` : '录制步骤后会生成 Playwright replay 代码。',
-    action: '查看',
+    title: stats.stepCount ? '导出资产已生成' : '导出资产等待步骤',
+    detail: stats.stepCount ? `当前包含 ${stats.stepCount} 个步骤、${stats.assertionCount} 个启用断言。` : '录制步骤后会生成业务流程 JSON、紧凑 YAML 和代码预览。',
+    action: '查看代码预览',
   });
   risks.push({
     id: 'redaction-ready',

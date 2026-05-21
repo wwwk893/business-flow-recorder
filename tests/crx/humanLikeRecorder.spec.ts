@@ -29,7 +29,6 @@ import {
   humanClickUntil,
   humanClickVisible,
   humanType,
-  openReplayPanelLikeUser,
   openStepCheckPanelLikeUser,
   selectAntdCascaderPathLikeUser,
   selectAntdOptionLikeUser,
@@ -133,20 +132,10 @@ test('human-like recorder preserves nth for duplicate test id save button @human
   expect(saveStep?.target?.locatorHint?.pageIndex).toBe(1);
   expect(flow.artifacts.playwrightCode).toContain('page.getByTestId("site-save-button").nth(1).click();');
   expect(flow.artifacts.playwrightCode).not.toContain('page.getByTestId("site-save-button").click();');
-
-  await openReplayPanelLikeUser(recorderPage);
-
-  const runtimeLogBaseline = await runtimeDiagnostics(recorderPage);
-  await humanClick(recorderPage.getByTitle('Resume (F8)'));
-  await expect.poll(async () => {
-    const logs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-    return logs.some(log => log.type === 'runtime.playback-stop');
-  }, { timeout: 30_000 }).toBeTruthy();
-  const replayRuntimeLogs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-  expect(replayRuntimeLogs.filter(log => log.type.includes('error') || log.level === 'warn')).toEqual([]);
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
 });
 
-test('human-like records SD-WAN WAN2 transport delete flow and replays through AntD popconfirm @human-smoke', async ({ context, page, attachRecorder, baseURL }, testInfo) => {
+test('human-like records SD-WAN WAN2 transport delete flow and exports replayable code @human-smoke', async ({ context, page, attachRecorder, baseURL }, testInfo) => {
   test.setTimeout(180_000);
   const strictHumanOptions = { allowFallback: false as const };
 
@@ -155,7 +144,7 @@ test('human-like records SD-WAN WAN2 transport delete flow and replays through A
   recorderPage.on('dialog', dialog => dialog.type() === 'prompt' ? dialog.accept('5') : dialog.accept());
 
   await beginNewFlowFromLibraryLikeUser(recorderPage);
-  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'SD-WAN WAN2 传输网络删除回放');
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'SD-WAN WAN2 传输网络删除导出');
   await fillFlowMetaLikeUser(recorderPage, '应用', 'Nova SD-WAN');
   await fillFlowMetaLikeUser(recorderPage, '模块', '站点配置');
   await fillFlowMetaLikeUser(recorderPage, '页面', '全局配置-WAN');
@@ -227,7 +216,7 @@ test('human-like records SD-WAN WAN2 transport delete flow and replays through A
 
   const flow = await exportBusinessFlowJsonLikeUser(recorderPage);
   await attachRecorderEvidence(testInfo, page, recorderPage, flow);
-  expect(flow.flow.name).toBe('SD-WAN WAN2 传输网络删除回放');
+  expect(flow.flow.name).toBe('SD-WAN WAN2 传输网络删除导出');
   expect(flow.artifacts.playwrightCode).toContain('wan-edit-2');
   expect(flow.artifacts.playwrightCode).toContain('wan-transport-row-delete-action');
   expect(flow.artifacts.playwrightCode).toMatch(/\.ant-popover:not\(\.ant-popover-hidden\)[\s\S]*getByRole\("button", \{ name: \/\^\(确定\|确 定\)\$\/ \}\)\.click\(\);/);
@@ -248,24 +237,10 @@ test('human-like records SD-WAN WAN2 transport delete flow and replays through A
     ],
   });
 
-  await page.goto(`${baseURL}/antd-pro-form-fields.html?duplicateSaveButton=1`);
-  await attachRecorder(page, { mode: 'business-flow' });
-  await expectWanConfigPage(page);
-  await openReplayPanelLikeUser(recorderPage);
-  const runtimeLogBaseline = await runtimeDiagnostics(recorderPage);
-  await humanClick(recorderPage.getByTitle('Resume (F8)'));
-  await expect.poll(async () => {
-    const logs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-    return logs.some(log => log.type === 'runtime.playback-stop');
-  }, { timeout: 45_000 }).toBeTruthy();
-  const replayRuntimeLogs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-  expect(replayRuntimeLogs.filter(log => log.type.includes('error') || log.level === 'warn')).toEqual([]);
-  expect(replayRuntimeLogs.filter(log => log.type === 'runtime.playback-request')).toHaveLength(1);
-  expect(replayRuntimeLogs.filter(log => log.type === 'runtime.playback-actions')).toHaveLength(1);
-  await expect(page.getByText('配置已保存')).toBeVisible({ timeout: 10_000 });
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
 });
 
-test('human-like records shared WAN duplicate row edit action and replays stably @human-smoke', async ({ context, page, attachRecorder, baseURL }, testInfo) => {
+test('human-like records shared WAN duplicate row edit action and exports replayable code @human-smoke', async ({ context, page, attachRecorder, baseURL }, testInfo) => {
   test.setTimeout(180_000);
   const strictHumanOptions = { allowFallback: false as const };
 
@@ -274,7 +249,7 @@ test('human-like records shared WAN duplicate row edit action and replays stably
   recorderPage.on('dialog', dialog => dialog.type() === 'prompt' ? dialog.accept('5') : dialog.accept());
 
   await beginNewFlowFromLibraryLikeUser(recorderPage);
-  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'SD-WAN 共享WAN 行编辑回放');
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'SD-WAN 共享WAN 行编辑导出');
   await fillFlowMetaLikeUser(recorderPage, '应用', 'Nova SD-WAN');
   await fillFlowMetaLikeUser(recorderPage, '模块', '站点配置');
   await fillFlowMetaLikeUser(recorderPage, '页面', '全局配置-共享WAN');
@@ -358,7 +333,7 @@ test('human-like records shared WAN duplicate row edit action and replays stably
   });
 });
 
-test('human-like runtime replay skips redundant IPv4 field focus click @human-smoke', async ({ page, attachRecorder, baseURL }) => {
+test('human-like exported code skips redundant IPv4 field focus click @human-smoke', async ({ page, attachRecorder, baseURL }) => {
   test.setTimeout(120_000);
   const strictHumanOptions = { allowFallback: false as const };
 
@@ -367,7 +342,7 @@ test('human-like runtime replay skips redundant IPv4 field focus click @human-sm
   recorderPage.on('dialog', dialog => dialog.type() === 'prompt' ? dialog.accept('5') : dialog.accept());
 
   await beginNewFlowFromLibraryLikeUser(recorderPage);
-  await fillFlowMetaLikeUser(recorderPage, '流程名称', '地址池 runtime replay');
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', '地址池导出代码');
   await fillFlowMetaLikeUser(recorderPage, '应用', 'AntD Pro');
   await fillFlowMetaLikeUser(recorderPage, '模块', '站点配置');
   await fillFlowMetaLikeUser(recorderPage, '页面', '全局配置');
@@ -424,22 +399,10 @@ test('human-like runtime replay skips redundant IPv4 field focus click @human-sm
   expect(flow.artifacts.playwrightCode).not.toContain('role=button[name="选择一个WAN口"');
   expect(flow.artifacts.playwrightCode).not.toContain('nth(4)');
 
-  await page.goto(`${baseURL}/antd-pro-form-fields.html`);
-  await attachRecorder(page, { mode: 'business-flow' });
-  await expectAddressAndPortPoolsPage(page);
-  await openReplayPanelLikeUser(recorderPage);
-  const runtimeLogBaseline = await runtimeDiagnostics(recorderPage);
-  await humanClick(recorderPage.getByTitle('Resume (F8)'));
-  await expect.poll(async () => {
-    const logs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-    return logs.some(log => log.type === 'runtime.playback-stop');
-  }, { timeout: 30_000 }).toBeTruthy();
-  const replayRuntimeLogs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-  expect(replayRuntimeLogs.filter(log => log.type.includes('error') || log.level === 'warn')).toEqual([]);
-  await expect(page.getByRole('row', { name: /runtime-pool.*xtest16:WAN1.*1\.1\.1\.1.*2\.2\.2\.2/ })).toBeVisible({ timeout: 10_000 });
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
 });
 
-test('human-like runtime replay supports wait inserted between address and port pools @human-smoke', async ({ page, attachRecorder, baseURL }, testInfo) => {
+test('human-like exported code supports wait inserted between address and port pools @human-smoke', async ({ page, attachRecorder, baseURL }, testInfo) => {
   test.setTimeout(180_000);
   const strictHumanOptions = { allowFallback: false as const };
 
@@ -535,20 +498,7 @@ test('human-like runtime replay supports wait inserted between address and port 
   expect(flow.artifacts.playwrightCode).toContain('site-ip-port-pool-create-button');
   expect(flow.artifacts.playwrightCode).not.toContain('.fill("2.2.")');
   expect(flow.artifacts.playwrightCode).toContain('.fill("2.2.2.2")');
-
-  await page.goto(`${baseURL}/antd-pro-form-fields.html?duplicateSaveButton=1`);
-  await attachRecorder(page, { mode: 'business-flow' });
-  await expectAddressAndPortPoolsPage(page);
-  await openReplayPanelLikeUser(recorderPage);
-  const runtimeLogBaseline = await runtimeDiagnostics(recorderPage);
-  await humanClick(recorderPage.getByTitle('Resume (F8)'));
-  await expect.poll(async () => {
-    const logs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-    return logs.some(log => log.type === 'runtime.playback-stop');
-  }, { timeout: 60_000 }).toBeTruthy();
-  const replayRuntimeLogs = await runtimeDiagnosticsAfter(recorderPage, runtimeLogBaseline);
-  expect(replayRuntimeLogs.filter(log => log.type.includes('error') || log.level === 'warn')).toEqual([]);
-  await expect.poll(async () => await page.getByTestId('site-ip-port-pool-table').innerText().catch(() => ''), { timeout: 30_000 }).toMatch(/test12[\s\S]*test1[\s\S]*1\.1\.1\.1--2\.2\.2\.2[\s\S]*1\.1\.1\.1:80[\s\S]*default/);
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
 });
 
 test('human-like records IPv4 pool repeat flow and replays generated code @human-smoke', async ({ context, page, attachRecorder, baseURL }, testInfo) => {
@@ -891,7 +841,7 @@ test('human-like records real WAN transport terminal states and replays terminal
   recorderPage.on('dialog', dialog => dialog.type() === 'prompt' ? dialog.accept('5') : dialog.accept());
 
   await beginNewFlowFromLibraryLikeUser(recorderPage);
-  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'WAN 传输网络终态回放');
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', 'WAN 传输网络终态导出');
   await fillFlowMetaLikeUser(recorderPage, '应用', 'AntD Pro');
   await fillFlowMetaLikeUser(recorderPage, '模块', '站点配置');
   await fillFlowMetaLikeUser(recorderPage, '页面', 'WAN 传输网络');
@@ -1004,26 +954,6 @@ async function selectVisibleAntdOption(page: Page, trigger: Locator, optionText:
 
 function loadBenchmarkCase(fileName: string) {
   return JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'benchmarks', 'agent_models', 'cases', fileName), 'utf8'));
-}
-
-type RuntimeDiagnostic = {
-  id: number;
-  type: string;
-  level?: string;
-  message?: string;
-  data?: unknown;
-};
-
-async function runtimeDiagnostics(page: Page): Promise<RuntimeDiagnostic[]> {
-  return await page.evaluate(() => {
-    const logs = (window as typeof window & { __playwrightCrxRecorderDiagnostics?: RuntimeDiagnostic[] }).__playwrightCrxRecorderDiagnostics ?? [];
-    return logs.filter(log => log.type.startsWith('runtime.'));
-  });
-}
-
-async function runtimeDiagnosticsAfter(page: Page, baseline: RuntimeDiagnostic[]) {
-  const maxBaselineId = baseline.reduce((max, log) => Math.max(max, log.id), 0);
-  return (await runtimeDiagnostics(page)).filter(log => log.id > maxBaselineId);
 }
 
 async function expectAddressAndPortPoolsPage(page: Page) {

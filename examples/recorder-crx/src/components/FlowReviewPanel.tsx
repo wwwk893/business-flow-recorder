@@ -36,13 +36,13 @@ export const FlowReviewPanel: React.FC<{
   onClearSteps: () => void;
   onExportJson: () => void;
   onExportYaml: () => void;
-  onOpenReplayCode: () => void;
+  onOpenCodePreview: () => void;
   onEditFlow: () => void;
   onOpenSettings: () => void;
   onSaveRepeatSegment: (segment: FlowRepeatSegment) => void;
   onDeleteRepeatSegment: (segmentId: string) => void;
   showStepToolbar?: boolean;
-}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenReplayCode, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, showStepToolbar = true }) => {
+}> = ({ mode, flow, redactionEnabled, onAddAssertion, onDeleteStep, onDeleteSteps, onContinueRecording, onContinueRecordingFrom, onInsertEmptyStep, onInsertWaitStep, onSaveRecord, onClearSteps, onExportJson, onExportYaml, onOpenCodePreview, onEditFlow, onOpenSettings, onSaveRepeatSegment, onDeleteRepeatSegment, showStepToolbar = true }) => {
   const stats = flowStats(flow);
   const repeatStats = repeatSegmentStats(flow);
   const [activeInsertStepId, setActiveInsertStepId] = React.useState<string>();
@@ -136,7 +136,7 @@ export const FlowReviewPanel: React.FC<{
       redactionEnabled={redactionEnabled}
       onExportJson={onExportJson}
       onExportYaml={onExportYaml}
-      onOpenReplayCode={onOpenReplayCode}
+      onOpenCodePreview={onOpenCodePreview}
       onEditFlow={onEditFlow}
       onContinueRecording={onContinueRecording}
       onAddAssertion={onAddAssertion}

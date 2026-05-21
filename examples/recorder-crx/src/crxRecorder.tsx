@@ -299,7 +299,7 @@ function cleanupPickedText(value?: string) {
   return value?.replace(/\\(["'])/g, '$1').trim();
 }
 
-type PanelStage = 'library' | 'setup' | 'recording' | 'assertion' | 'review' | 'replay' | 'editRecord' | 'flowSettings' | 'aiSettings' | 'aiUsage';
+type PanelStage = 'library' | 'setup' | 'recording' | 'assertion' | 'review' | 'editRecord' | 'flowSettings' | 'aiSettings' | 'aiUsage';
 type PanelTab = 'business' | 'code' | 'log';
 type FlowFormSheetState =
   | { mode: 'new'; flow: BusinessFlow }
@@ -519,7 +519,6 @@ export const CrxRecorder: React.FC = ({
   const pendingSyntheticClickEventsRef = React.useRef<PageContextEvent[]>([]);
   const pageContextCaptureStartedAtRef = React.useRef<number>();
   const syntheticFlushTimerRef = React.useRef<number>();
-  const businessFlowPlaybackCodeRef = React.useRef('');
   const businessFlowEnabledRef = React.useRef(defaultSettings.businessFlowEnabled !== false);
   const pageContextCaptureActiveRef = React.useRef(false);
   const finalizingRecordingSessionRef = React.useRef(false);
@@ -970,14 +969,14 @@ export const CrxRecorder: React.FC = ({
           appendDiagnosticLog({
             type: result?.ok ? 'runtime.attach-active-tab' : skipped ? 'runtime.attach-active-tab-skipped' : 'runtime.attach-active-tab-failed',
             level: result?.ok || skipped ? undefined : 'warn',
-            message: result?.ok ? '回放前已确认当前业务页附加到 recorder' : browserGestureDenied ? '浏览器限制当前时机打开 side panel，继续沿用 recorder 已附加页面' : skipped ? '回放前未找到新的当前业务页，沿用已附加页面' : '回放前附加当前业务页失败',
+            message: result?.ok ? '运行前已确认当前业务页附加到 recorder' : browserGestureDenied ? '浏览器限制当前时机打开 side panel，继续沿用 recorder 已附加页面' : skipped ? '运行前未找到新的当前业务页，沿用已附加页面' : '运行前附加当前业务页失败',
             data: result,
           });
         }).catch(error => {
           appendDiagnosticLog({
             type: 'runtime.attach-active-tab-failed',
             level: 'warn',
-            message: '回放前附加当前业务页失败',
+            message: '运行前附加当前业务页失败',
             data: { message: error?.message ?? String(error) },
           });
         });
@@ -1183,10 +1182,8 @@ export const CrxRecorder: React.FC = ({
     return flowAiIntentConfiguredEnabled && !!activeAiProfile && !!activeAiApiKey.trim();
   }, [activeAiApiKey, activeAiProfile, flowAiIntentConfiguredEnabled]);
   const businessFlowCode = React.useMemo(() => generateBusinessFlowPlaywrightCode(flowDraft), [flowDraft]);
-  const businessFlowPlaybackCode = React.useMemo(() => generateBusinessFlowPlaybackCode(flowDraft), [flowDraft]);
   const generatedBusinessSources = React.useMemo(() => businessFlowSources(sources, businessFlowCode), [businessFlowCode, sources]);
-  const generatedBusinessPlaybackSources = React.useMemo(() => businessFlowSources(sources, businessFlowPlaybackCode), [businessFlowPlaybackCode, sources]);
-  const currentCodeText = settings.businessFlowEnabled === false ? source?.text : panelStage === 'replay' ? businessFlowPlaybackCode : businessFlowCode;
+  const currentCodeText = settings.businessFlowEnabled === false ? source?.text : businessFlowCode;
   const hasUnsavedFlowChanges = React.useMemo(() => {
     if (!hasMeaningfulFlowWork(flowDraft))
       return false;
@@ -1198,10 +1195,6 @@ export const CrxRecorder: React.FC = ({
     const codeForCurrentDraft = settings.businessFlowEnabled === false ? currentCodeText : businessFlowCode;
     return flowSaveSnapshot(flowDraft, codeForCurrentDraft) !== flowSaveSnapshot(savedRecord, savedRecord.artifacts?.playwrightCode);
   }, [businessFlowCode, currentCodeText, flowDraft, flowRecords, panelStage, selectedRecordId, settings.businessFlowEnabled]);
-
-  React.useEffect(() => {
-    businessFlowPlaybackCodeRef.current = businessFlowPlaybackCode;
-  }, [businessFlowPlaybackCode]);
 
   React.useEffect(() => {
     if (!activeAiProfile) {
@@ -1224,12 +1217,12 @@ export const CrxRecorder: React.FC = ({
   React.useEffect(() => {
     if (settings.businessFlowEnabled === false || panelStage === 'setup' || panelStage === 'library' || panelStage === 'editRecord')
       return;
-    if (finalizingRecordingSessionRef.current && panelStage === 'replay')
+    if (finalizingRecordingSessionRef.current)
       return;
     setSelectedFileId('playwright-test');
     window.dispatch({ event: 'fileChanged', params: { file: 'playwright-test' } }).catch(() => {});
-    window.dispatch({ event: 'businessFlowCodeChanged', params: { code: businessFlowPlaybackCode } }).catch(() => {});
-  }, [businessFlowPlaybackCode, panelStage, settings.businessFlowEnabled]);
+    window.dispatch({ event: 'businessFlowCodeChanged', params: { code: businessFlowCode } }).catch(() => {});
+  }, [businessFlowCode, panelStage, settings.businessFlowEnabled]);
 
   const requestStorageState = React.useCallback(() => {
     if (!settings.experimental)
@@ -1357,9 +1350,8 @@ export const CrxRecorder: React.FC = ({
       setSavingBeforeLeave(false);
   }, [goToLibraryNow, saveCurrentRecord]);
 
-  const openReplayPanel = React.useCallback(async () => {
+  const openCodePreviewPanel = React.useCallback(async () => {
     finalizingRecordingSessionRef.current = true;
-    setPanelStage('replay');
     setActiveTab('code');
     setPaused(true);
     setSelectedFileId('playwright-test');
@@ -1369,8 +1361,8 @@ export const CrxRecorder: React.FC = ({
 
     try {
       const finalizedFlow = await finalizeCurrentRecordingSession('generate-code');
-      const playbackCode = settings.businessFlowEnabled === false ? currentCodeText : generateBusinessFlowPlaybackCode(finalizedFlow);
-      window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
+      const previewCode = settings.businessFlowEnabled === false ? currentCodeText : generateBusinessFlowPlaywrightCode(finalizedFlow);
+      window.dispatch({ event: 'businessFlowCodeChanged', params: { code: previewCode } }).catch(() => {});
     } finally {
       finalizingRecordingSessionRef.current = false;
       if (pageContextCaptureActiveRef.current)
@@ -2140,16 +2132,16 @@ export const CrxRecorder: React.FC = ({
   const selectedAssertionSuggestion = selectedAssertionStep ? buildSuggestion(flowDraft.steps, selectedAssertionStepIndex) : undefined;
   const recordingFlowName = flowDraft.flow.name.trim();
   const selectedFlowName = recordingFlowName || '未命名流程';
-  const hasFlowContext = hasActiveRecordingFlowContext && (panelStage === 'recording' || panelStage === 'assertion' || panelStage === 'review' || panelStage === 'replay' || panelStage === 'editRecord' || panelStage === 'flowSettings');
+  const hasFlowContext = hasActiveRecordingFlowContext && (panelStage === 'recording' || panelStage === 'assertion' || panelStage === 'review' || panelStage === 'editRecord' || panelStage === 'flowSettings');
   const libraryCountText = `共 ${flowRecords.length} 条记录`;
   const recordingSubject = [flowDraft.flow.module, flowDraft.flow.page].filter(Boolean).join(' / ') || selectedFlowName;
   const isActivelyRecording = panelStage === 'recording' && mode === 'recording';
-  const statusTitle = panelStage === 'library' ? '流程库' : panelStage === 'flowSettings' ? `流程设置 · ${selectedFlowName}` : panelStage === 'aiSettings' ? 'AI 设置' : panelStage === 'aiUsage' ? 'AI 用量' : panelStage === 'assertion' ? `断言 · ${selectedAssertionStepLabel}` : panelStage === 'editRecord' ? `流程 · ${selectedFlowName}` : panelStage === 'replay' ? `回放 · ${selectedFlowName}` : panelStage === 'review' ? '导出检查' : panelStage === 'recording' ? (recordingFlowName ? `${isActivelyRecording ? '录制中' : '步骤检查'} · ${selectedFlowName}` : '录制 · 未选择流程') : '新建流程';
-  const statusCopy = panelStage === 'library' ? libraryCountText : panelStage === 'recording' ? (recordingFlowName ? (isActivelyRecording ? `正在录制：${recordingSubject}` : '当前未录制，可继续录制、补断言或保存记录') : '先选择或新建流程') : panelStage === 'assertion' ? `保存后挂到 ${selectedAssertionStepLabel} 之后` : panelStage === 'replay' ? '检查生成代码和运行日志' : panelStage === 'review' ? `${stats.missingAssertionCount ? `${stats.missingAssertionCount} 个步骤待补断言` : '导出检查已就绪'}` : panelStage === 'editRecord' ? '正在编辑当前流程记录' : panelStage === 'flowSettings' ? '当前业务流程的 AI Intent 策略' : panelStage === 'aiSettings' ? 'AI key 仅本地存储' : panelStage === 'aiUsage' ? '本地用量摘要' : '保存后才能进入录制和断言';
+  const statusTitle = panelStage === 'library' ? '流程库' : panelStage === 'flowSettings' ? `流程设置 · ${selectedFlowName}` : panelStage === 'aiSettings' ? 'AI 设置' : panelStage === 'aiUsage' ? 'AI 用量' : panelStage === 'assertion' ? `断言 · ${selectedAssertionStepLabel}` : panelStage === 'editRecord' ? `流程 · ${selectedFlowName}` : panelStage === 'review' ? '导出检查' : panelStage === 'recording' ? (recordingFlowName ? `${isActivelyRecording ? '录制中' : '步骤检查'} · ${selectedFlowName}` : '录制 · 未选择流程') : '新建流程';
+  const statusCopy = panelStage === 'library' ? libraryCountText : panelStage === 'recording' ? (recordingFlowName ? (isActivelyRecording ? `正在录制：${recordingSubject}` : '当前未录制，可继续录制、补断言或保存记录') : '先选择或新建流程') : panelStage === 'assertion' ? `保存后挂到 ${selectedAssertionStepLabel} 之后` : panelStage === 'review' ? `${stats.missingAssertionCount ? `${stats.missingAssertionCount} 个步骤待补断言` : '导出检查已就绪'}` : panelStage === 'editRecord' ? '正在编辑当前流程记录' : panelStage === 'flowSettings' ? '当前业务流程的 AI Intent 策略' : panelStage === 'aiSettings' ? 'AI key 仅本地存储' : panelStage === 'aiUsage' ? '本地用量摘要' : '保存后才能进入录制和断言';
   const statusText = `${statusTitle} ${statusCopy}`;
-  const statusClass = panelStage === 'assertion' || panelStage === 'review' || panelStage === 'replay' ? 'assertion' : panelStage === 'library' || panelStage === 'editRecord' || panelStage === 'flowSettings' || panelStage === 'aiSettings' || panelStage === 'aiUsage' ? 'review' : panelStage === 'recording' ? (hasActiveRecordingFlowContext ? (isActivelyRecording ? 'recording' : 'review') : 'setup') : 'setup';
+  const statusClass = panelStage === 'assertion' || panelStage === 'review' ? 'assertion' : panelStage === 'library' || panelStage === 'editRecord' || panelStage === 'flowSettings' || panelStage === 'aiSettings' || panelStage === 'aiUsage' ? 'review' : panelStage === 'recording' ? (hasActiveRecordingFlowContext ? (isActivelyRecording ? 'recording' : 'review') : 'setup') : 'setup';
   const metaLine = [flowDraft.flow.module, flowDraft.flow.role, `${stats.stepCount} 步骤`].filter(Boolean).join(' · ');
-  const usesRefinedFlowStage = panelStage === 'recording' || panelStage === 'assertion' || panelStage === 'review' || panelStage === 'replay' || panelStage === 'flowSettings';
+  const usesRefinedFlowStage = panelStage === 'recording' || panelStage === 'assertion' || panelStage === 'review' || panelStage === 'flowSettings';
   const insertAnchorStep = insertRecordingAfterStepId ? flowDraft.steps.find(step => step.id === insertRecordingAfterStepId) : undefined;
   const insertAnchorIndex = insertAnchorStep ? flowDraft.steps.indexOf(insertAnchorStep) : -1;
   const insertNextStep = insertAnchorIndex >= 0 ? flowDraft.steps[insertAnchorIndex + 1] : undefined;
@@ -2308,9 +2300,6 @@ export const CrxRecorder: React.FC = ({
                 setPanelStage('assertion');
               setActiveTab('business');
             }}>断言</button>}
-            {hasFlowContext && <button type='button' className={panelStage === 'replay' ? 'active' : ''} onClick={() => {
-              openReplayPanel().catch(() => {});
-            }}>回放</button>}
             {hasFlowContext && <button type='button' className={panelStage === 'review' ? 'active' : ''} onClick={() => {
               enterReviewPanel().catch(() => {});
             }}>导出</button>}
@@ -2525,8 +2514,8 @@ export const CrxRecorder: React.FC = ({
                   }}
                   onExportJson={() => exportBusinessFlow('json')}
                   onExportYaml={() => exportBusinessFlow('yaml')}
-                  onOpenReplayCode={() => {
-                    openReplayPanel().catch(() => {});
+                  onOpenCodePreview={() => {
+                    openCodePreviewPanel().catch(() => {});
                   }}
                   onEditFlow={() => openEditFlowSheet(flowDraft)}
                   onOpenSettings={() => setPanelStage('aiSettings')}
@@ -2561,8 +2550,8 @@ export const CrxRecorder: React.FC = ({
                 }}
                 onExportJson={() => exportBusinessFlow('json')}
                 onExportYaml={() => exportBusinessFlow('yaml')}
-                onOpenReplayCode={() => {
-                  openReplayPanel().catch(() => {});
+                onOpenCodePreview={() => {
+                  openCodePreviewPanel().catch(() => {});
                 }}
                 onEditFlow={() => openEditFlowSheet(flowDraft)}
                 onOpenSettings={() => setPanelStage('aiSettings')}
@@ -2574,7 +2563,7 @@ export const CrxRecorder: React.FC = ({
                   <button type='button' onClick={saveCode}>保存代码</button>
                   <button type='button' onClick={requestStorageState}>下载 storage state</button>
                 </div>}
-                <Recorder sources={panelStage === 'replay' ? generatedBusinessPlaybackSources : generatedBusinessSources} paused={panelStage === 'replay' ? true : paused} log={log} mode={mode} onEditedCode={dispatchEditedCode} onCursorActivity={dispatchCursorActivity} />
+                <Recorder sources={generatedBusinessSources} paused={paused} log={log} mode={mode} onEditedCode={dispatchEditedCode} onCursorActivity={dispatchCursorActivity} />
               </div>}
             </>}
           </div>

@@ -195,7 +195,13 @@ test('records a real AntD user business flow through the plugin UI, exports it, 
   await recorderPage.locator('.side-panel-nav').getByRole('button', { name: '导出', exact: true }).click();
   await expect(recorderPage.locator('.recording-status')).toContainText('导出检查');
   await expect(recorderPage.locator('.export-review-panel')).toContainText('导出前复核：AntD 用户流程 E2E');
-  await expect(recorderPage.locator('.export-review-panel')).toContainText(/Replay CTA|回放 CTA/);
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
+  await expect(recorderPage.locator('.export-review-panel')).toContainText('导出检查');
+  await expect(recorderPage.locator('.export-review-panel')).toContainText('导出流程 JSON');
+  await expect(recorderPage.locator('.export-review-panel')).toContainText('导出紧凑 YAML');
+  await expect(recorderPage.locator('.export-review-panel')).toContainText(/外部 recorded-flow runner|Codex agent task|业务流程 JSON|紧凑 YAML/);
+  const removedReplayReadyCopy = ['回放代码', '已生成'].join('');
+  await expect(recorderPage.locator('.export-review-panel')).not.toContainText(removedReplayReadyCopy);
   await expect(recorderPage.locator('.export-review-panel')).toContainText('P1');
   await expect(recorderPage.locator('.export-review-panel')).toContainText('脱敏开启');
 

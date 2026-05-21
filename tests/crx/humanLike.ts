@@ -543,18 +543,6 @@ async function openExportPanelLikeUser(recorderPage: Page) {
   await expect(recorderPage.locator('.export-review-panel')).toBeVisible();
 }
 
-export async function openReplayPanelLikeUser(recorderPage: Page) {
-  const replayCardButton = recorderPage.locator('.review-card').filter({ hasText: /Replay 代码|回放代码/ }).getByRole('button', { name: '查看' }).first();
-  if (await replayCardButton.count().catch(() => 0)) {
-    await replayCardButton.click({ timeout: 10_000 });
-  } else {
-    const replayNavButton = recorderPage.locator('.side-panel-nav.segmented button').nth(3);
-    await expect(replayNavButton).toBeVisible({ timeout: 10_000 });
-    await replayNavButton.click({ timeout: 10_000 });
-  }
-  await expect(recorderPage.getByTitle('Resume (F8)')).toBeVisible({ timeout: 10_000 });
-}
-
 export async function openStepCheckPanelLikeUser(recorderPage: Page) {
   const status = recorderPage.locator('.recording-status');
   for (let attempt = 0; attempt < 3; attempt++) {
