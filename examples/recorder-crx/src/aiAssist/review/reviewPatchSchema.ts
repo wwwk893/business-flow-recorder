@@ -78,8 +78,6 @@ export function validateRecordingReviewPatchShape(value: unknown, context?: Reco
     errors.push('autoApplyEligibility.maxRisk is invalid');
   if (patch.patches?.length && patch.issues?.every(issue => issue.issueKind === 'false-positive-none'))
     errors.push('patches are not reasonable for false-positive-none only');
-  if (containsForbiddenCode(value))
-    errors.push('patch must not contain waitForTimeout or raw TypeScript code');
   return errors;
 }
 
@@ -95,9 +93,4 @@ export function parseJsonObject(text: string): unknown {
 
 function isKnownStep(value: unknown, stepIds?: Set<string>) {
   return typeof value === 'string' && (!stepIds || stepIds.has(value));
-}
-
-function containsForbiddenCode(value: unknown) {
-  const text = JSON.stringify(value);
-  return /waitForTimeout|await\s+page\.|import\s+\{|test\(["']|=>\s*\{/.test(text);
 }

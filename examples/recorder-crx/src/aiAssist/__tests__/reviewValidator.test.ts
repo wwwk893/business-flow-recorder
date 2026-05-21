@@ -21,6 +21,16 @@ export const reviewValidatorTests: AiAssistTestCase[] = [{
     const bad = validateRecordingReviewPatch(flow, context, placeholderOnlyReviewPatch());
     assert(!bad.ok, 'placeholder-only patch should not pass propagated validation');
     assert(bad.errors.some(error => error.includes('root cause')), 'validator should explain root cause requirement');
+
+    const inventedLabel = validateRecordingReviewPatch(flow, context, {
+      ...correctLanReviewPatch(),
+      patches: [
+        { op: 'force-emit-step', stepId: 's007', reason: 'The LAN1 edit action is required before filling LAN IP.' },
+        { op: 'replace-locator-scope', stepId: 's009', scope: { dialog: { title: '编辑LAN1' }, form: { label: '对应字段标签' } }, reason: 'Scope with placeholder label.' },
+      ],
+    });
+    assert(!inventedLabel.ok, 'patches with invented placeholder labels should not pass validation');
+    assert(inventedLabel.errors.some(error => error.includes('placeholder locator label')), 'validator should explain placeholder locator labels');
   },
 }, {
   name: 'AI Review applier keeps multiple patch operations on the same step',

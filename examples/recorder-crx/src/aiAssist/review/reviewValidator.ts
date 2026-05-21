@@ -22,6 +22,7 @@ export function validateRecordingReviewPatch(flow: BusinessFlow, context: Record
     if (patch.autoApplyEligibility.eligible)
       errors.push('High/critical recording review patches are not auto-applicable.');
   }
+  errors.push(...locatorScopeLabelValidationErrors(context, patch));
   const propagatedErrors = propagatedValidationErrors(context, patch);
   errors.push(...propagatedErrors);
 
@@ -49,6 +50,38 @@ export function validateRecordingReviewPatch(flow: BusinessFlow, context: Record
 
 export function applyAndValidateRecordingReviewPatch(flow: BusinessFlow, context: RecordingReviewContext, patch: RecordingReviewPatch): RecordingReviewValidationResult {
   return validateRecordingReviewPatch(flow, context, patch);
+}
+
+function locatorScopeLabelValidationErrors(context: RecordingReviewContext, patch: RecordingReviewPatch) {
+  const errors: string[] = [];
+  for (const op of patch.patches) {
+    const step = context.steps.find(candidate => candidate.id === op.stepId);
+    const stepEvidence = JSON.stringify(step || {});
+    for (const label of locatorScopeLabels(op)) {
+      if (isPlaceholderScopeLabel(label)) {
+        errors.push(`${op.stepId} patch uses placeholder locator label "${label}".`);
+        continue;
+      }
+      if (label && stepEvidence && !stepEvidence.includes(label))
+        errors.push(`${op.stepId} patch uses locator label "${label}" that is not present in the review context.`);
+    }
+  }
+  return errors;
+}
+
+function locatorScopeLabels(op: RecordingReviewPatch['patches'][number]) {
+  const labels: string[] = [];
+  const scopeLabel = (op as any).scope?.form?.label;
+  const triggerLabel = (op as any).locatorContractHint?.trigger?.form?.label;
+  if (typeof scopeLabel === 'string')
+    labels.push(scopeLabel);
+  if (typeof triggerLabel === 'string')
+    labels.push(triggerLabel);
+  return labels.filter(Boolean);
+}
+
+function isPlaceholderScopeLabel(label: string) {
+  return /对应字段标签|字段标签|待补充|待确认|todo|placeholder|field label/i.test(label);
 }
 
 function propagatedValidationErrors(context: RecordingReviewContext, patch: RecordingReviewPatch) {

@@ -9,9 +9,12 @@ import type { ReplayRepairValidationResult, RecordingReviewPatch, RecordingRevie
 export type AiAssistReviewState = {
   status: 'idle' | 'running' | 'ready' | 'error';
   message?: string;
+  developerMessage?: string;
   patch?: RecordingReviewPatch;
   validation?: RecordingReviewValidationResult;
   requestId?: string;
+  rawOutput?: string;
+  prompt?: string;
 };
 
 export type AiAssistRepairState = {
@@ -50,16 +53,21 @@ export const AiAssistReviewCard: React.FC<{
   const reviewDetail = review.status === 'running'
     ? '正在保存原始规则版、审查步骤和安全规则。'
     : review.status === 'error'
-      ? review.message || 'AI 优化失败，当前流程仍使用原始规则版。'
+      ? '原始规则版已保留，可以继续回放。'
       : issueCount
         ? `${issueCount} 个问题已处理；${reviewApplyHint}`
         : '保留原始规则版，AI 只返回结构化修改，插件校验后才应用。';
   const reviewBadge = review.status === 'running' ? '优化中' : review.status === 'error' ? '未应用' : review.validation?.autoApply ? '已应用' : review.validation?.ok ? '待应用' : '待优化';
   const canApply = !!review.validation?.ok && !review.validation.autoApply && review.status !== 'running';
+  const canRestoreOriginal = !!review.validation?.autoApply;
+  const canShowRunReview = review.status === 'idle' || review.status === 'running';
+  const developerIssues = review.patch?.issues ?? [];
+  const validationErrors = review.validation?.errors ?? [];
+  const hasDeveloperDetails = !!review.developerMessage || !!review.requestId || developerIssues.length > 0 || validationErrors.length > 0;
   return <section className='ai-assist-card' aria-label='AI Review 与 AI Repair'>
     <div className='section-title'>
       <strong>AI 自动优化</strong>
-      <span>{review.status === 'running' ? '正在优化当前流程，原始规则版会保留。' : review.message || '测试人员只需要看当前版本能否回放，工程细节默认折叠。'}</span>
+      <span>{review.status === 'running' ? '正在优化当前流程，原始规则版会保留。' : review.status === 'error' ? 'AI 未应用，继续使用原始规则版。' : review.message || '测试人员只需要看当前版本能否回放，工程细节默认折叠。'}</span>
     </div>
     <div className='review-stack'>
       <div className='review-card'>
@@ -68,7 +76,7 @@ export const AiAssistReviewCard: React.FC<{
           <strong>{review.patch?.diagnosis.summary || reviewTitle}</strong>
           <span>{reviewDetail}</span>
         </div>
-        <button type='button' className='mini-button' disabled={review.status === 'running'} onClick={onRunReview}>{review.status === 'idle' ? 'AI 优化' : '重新优化'}</button>
+        {canShowRunReview && <button type='button' className='mini-button' disabled={review.status === 'running'} onClick={onRunReview}>AI 优化</button>}
       </div>
       {!!review.patch?.issues.length && <div className='review-card'>
         <span className={`risk ${riskClass(review.patch.diagnosis.overallRisk)}`}>{review.patch.diagnosis.overallRisk.toUpperCase()}</span>
@@ -80,7 +88,7 @@ export const AiAssistReviewCard: React.FC<{
       </div>}
       {(review.status === 'ready' || review.status === 'error') && <div className='version-actions-row'>
         {onOpenReplay && <button type='button' className='primary-button' onClick={onOpenReplay}>进入回放</button>}
-        {onRestoreOriginal && <button type='button' className='mini-button' onClick={onRestoreOriginal}>恢复原始规则版</button>}
+        {canRestoreOriginal && onRestoreOriginal && <button type='button' className='mini-button' onClick={onRestoreOriginal}>恢复原始规则版</button>}
       </div>}
       {showRepairButton && <div className='review-card'>
         <span className={`risk ${repair.status === 'error' ? 'p1' : repair.status === 'ready' ? 'ok' : 'p1'}`}>{repair.status}</span>
@@ -91,9 +99,14 @@ export const AiAssistReviewCard: React.FC<{
         <button type='button' className='mini-button' disabled={repair.status === 'running'} onClick={onRepairAndRetry}>AI 修复并重试</button>
         <button type='button' className='mini-button' disabled={repair.status === 'idle'} onClick={onRollbackRepair}>回滚</button>
       </div>}
-      {!!review.patch?.issues.length && <details className='developer-details'>
-        <summary>开发者详情</summary>
-        <div>{review.patch.issues.map(issue => <p key={issue.issueId}><strong>{issue.rootCauseStepId}</strong> → {issue.affectedStepIds.join(', ') || '当前步骤'}：{issue.issueKind}</p>)}</div>
+      {hasDeveloperDetails && <details className='developer-details'>
+        <summary>{review.status === 'error' ? '给开发者' : '开发者详情'}</summary>
+        <div>
+          {review.requestId && <p><strong>requestId</strong>：{review.requestId}</p>}
+          {review.developerMessage && <p><strong>原因</strong>：{review.developerMessage}</p>}
+          {validationErrors.map(error => <p key={error}><strong>检查结果</strong>：{error}</p>)}
+          {developerIssues.map(issue => <p key={issue.issueId}><strong>{issue.rootCauseStepId}</strong> → {issue.affectedStepIds.join(', ') || '当前步骤'}：{issue.issueKind}</p>)}
+        </div>
       </details>}
     </div>
   </section>;

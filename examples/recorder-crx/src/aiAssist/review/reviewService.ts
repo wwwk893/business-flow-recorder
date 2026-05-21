@@ -35,16 +35,26 @@ export async function reviewRecordingWithAiAssist(args: {
   const prompt = buildRecordingReviewPrompt(context, args.config.maxContextChars);
   try {
     const response = await args.provider.reviewRecording({ context, prompt, signal: args.signal });
-    const patch = parseRecordingReviewPatch(response.rawOutput, context);
-    const validation = applyAndValidateRecordingReviewPatch(args.flow, context, patch);
-    return {
-      context,
-      prompt,
-      rawOutput: response.rawOutput,
-      patch,
-      validation,
-      requestId: response.requestId,
-    };
+    try {
+      const patch = parseRecordingReviewPatch(response.rawOutput, context);
+      const validation = applyAndValidateRecordingReviewPatch(args.flow, context, patch);
+      return {
+        context,
+        prompt,
+        rawOutput: response.rawOutput,
+        patch,
+        validation,
+        requestId: response.requestId,
+      };
+    } catch (error) {
+      return {
+        context,
+        prompt,
+        rawOutput: response.rawOutput,
+        error: error instanceof Error ? error.message : String(error),
+        requestId: response.requestId,
+      };
+    }
   } catch (error) {
     return {
       context,

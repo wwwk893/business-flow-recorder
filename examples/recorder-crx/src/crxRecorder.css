@@ -2252,6 +2252,131 @@
   min-height: 360px;
 }
 
+.embedded-recorder.replay-with-ai-log {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(260px, 1fr) auto;
+  overflow: hidden;
+}
+
+.embedded-recorder.replay-with-ai-log > .recorder {
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.ai-replay-log-panel {
+  border-top: 1px solid var(--bf-border);
+  background: var(--bf-surface);
+}
+
+.ai-replay-log-body {
+  display: grid;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+}
+
+.ai-replay-log-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 6px 4px;
+  border-left: 3px solid transparent;
+  color: var(--bf-muted);
+  font-size: 12px;
+}
+
+.ai-replay-log-row.ok {
+  border-left-color: var(--bf-success);
+}
+
+.ai-replay-log-row.warn {
+  border-left-color: var(--bf-warning);
+}
+
+.ai-replay-log-row.busy {
+  border-left-color: var(--bf-primary);
+}
+
+.ai-replay-log-row strong {
+  display: block;
+  color: var(--bf-fg);
+  font-size: 12px;
+}
+
+.ai-replay-log-row span {
+  line-height: 1.45;
+}
+
+.ai-log-mark {
+  color: var(--bf-success);
+  font-weight: 800;
+  text-align: center;
+}
+
+.ai-replay-log-row.warn .ai-log-mark {
+  color: var(--bf-warning);
+}
+
+.ai-replay-log-row.busy .ai-log-mark {
+  color: var(--bf-primary);
+}
+
+.ai-replay-rollback {
+  justify-self: start;
+  margin: 2px 0 6px 26px;
+}
+
+.ai-replay-developer-details {
+  margin-top: 6px;
+}
+
+.ai-replay-loading-banner {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in oklab, var(--bf-primary), white 62%);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  pointer-events: none;
+}
+
+.ai-replay-loading-banner strong {
+  display: block;
+  color: var(--bf-fg);
+  font-size: 12px;
+}
+
+.ai-replay-loading-banner span {
+  color: var(--bf-muted);
+  font-size: 12px;
+}
+
+.ai-replay-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in oklab, var(--bf-primary), white 70%);
+  border-top-color: var(--bf-primary);
+  border-radius: 50%;
+  animation: ai-replay-spin 0.8s linear infinite;
+}
+
+@keyframes ai-replay-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .embedded-recorder.has-assertion-preview > .recorder {
   height: calc(100% - 180px);
 }
@@ -3287,6 +3412,32 @@
   width: min(440px, calc(100vw - 24px));
 }
 
+.ai-review-confirm-backdrop,
+.ai-review-result-backdrop {
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-review-confirm-sheet,
+.ai-review-result-sheet {
+  align-self: center;
+  width: min(420px, calc(100vw - 24px));
+}
+
+.ai-review-result-sheet {
+  width: min(620px, calc(100vw - 24px));
+}
+
+.ai-applied-code-backdrop {
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-applied-code-sheet {
+  align-self: center;
+  width: min(760px, calc(100vw - 24px));
+}
+
 .sheet-header {
   display: flex;
   justify-content: space-between;
@@ -3338,6 +3489,163 @@
   background: var(--surface-subtle);
 }
 
+.ai-review-confirm-body,
+.ai-review-result-body {
+  gap: 10px;
+}
+
+.ai-review-confirm-summary,
+.ai-review-confirm-list,
+.ai-review-result-card {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.ai-review-confirm-summary strong {
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.ai-review-confirm-summary span,
+.ai-review-confirm-list p,
+.ai-review-result-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ai-review-result-card h3 {
+  margin: 0;
+  color: var(--fg);
+  font-size: 13px;
+}
+
+.ai-review-result-card strong {
+  color: var(--fg);
+}
+
+.ai-review-result-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, 1fr) minmax(52px, 0.7fr);
+  gap: 8px;
+}
+
+.ai-review-result-grid span,
+.ai-review-result-grid strong {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-subtle);
+  font-size: 12px;
+}
+
+.ai-review-result-grid span {
+  color: var(--muted);
+}
+
+.ai-review-result-grid strong {
+  color: var(--fg);
+  text-align: right;
+}
+
+.ai-review-result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-review-result-list.compact {
+  gap: 6px;
+}
+
+.ai-review-result-status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  min-width: 0;
+}
+
+.ai-review-result-status .risk {
+  margin-top: 1px;
+}
+
+.ai-review-result-item {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ai-review-result-item.compact {
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+}
+
+.ai-review-result-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.ai-review-result-item-head strong,
+.ai-review-result-item.compact strong {
+  color: var(--fg);
+  font-size: 12px;
+}
+
+.ai-review-result-item span,
+.ai-review-result-item p {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ai-review-result-pill {
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: normal;
+}
+
+.ai-applied-code-body {
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 190px));
+  padding: 0;
+  background: #0f172a;
+}
+
+.ai-applied-code-block {
+  overflow: auto;
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 190px));
+  margin: 0;
+  padding: 14px 16px;
+  color: #dbeafe;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre;
+}
+
 .flow-sheet-two-col {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3373,6 +3681,10 @@
   padding: 14px 20px 18px;
   border-top: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.98);
+}
+
+.ai-review-result-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .sheet-actions button,
@@ -4632,6 +4944,34 @@
   background: var(--bf-surface);
 }
 
+.recording-ai-segmented {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--bf-border);
+  border-radius: 8px;
+  background: var(--bf-surface-subtle);
+}
+
+.recording-ai-segmented button {
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--bf-fg);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.recording-ai-segmented button.selected {
+  border-color: color-mix(in oklab, var(--bf-danger), white 58%);
+  background: var(--bf-danger-soft);
+  color: var(--bf-danger);
+}
+
 .flow-summary h2 {
   margin-bottom: 4px;
   font-size: 17px;
@@ -4661,8 +5001,8 @@
 
 .recording-toolbar .danger {
   border-color: color-mix(in oklab, var(--bf-danger), white 62%);
-  background: var(--bf-danger-soft);
-  color: var(--bf-danger);
+  background: var(--bf-danger);
+  color: #fff;
 }
 
 .flow-compact-stats,
@@ -5362,7 +5702,7 @@
 
 .ai-assist-card .version-actions-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 

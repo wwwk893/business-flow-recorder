@@ -57,7 +57,14 @@ export function testIdOf(element?: Element | null): string | undefined {
 export function labelTextForFormItem(formItem?: Element): string | undefined {
   if (!formItem)
     return undefined;
-  return textFromFirst('.ant-form-item-label label, label', formItem) || safeText(formItem.getAttribute('aria-label'));
+  return normalizeFormLabelText(textFromFirst('.ant-form-item-label label, label', formItem) || safeText(formItem.getAttribute('aria-label')));
+}
+
+export function normalizeFormLabelText(value?: string): string | undefined {
+  return value
+      ?.replace(/^\s*[*＊]\s*/, '')
+      .replace(/\s*(?:question|info|exclamation)-circle(?:-[a-z]+)?\b.*$/i, '')
+      .trim() || undefined;
 }
 
 export function fieldNameFor(anchor: Element): { name?: string; namePath?: string[]; source?: string } {

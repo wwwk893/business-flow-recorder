@@ -22,9 +22,10 @@ export const RecordingFlowContextBar: React.FC<{
   aiIntentEnabled: boolean;
   aiIntentModeLabel: string;
   aiAssistReviewEnabled?: boolean;
+  onAiAssistReviewEnabledChange?: (enabled: boolean) => void;
   nextStepLabel: string;
   insertAfterStepLabel?: string;
-}> = ({ flow, isRecording, aiIntentEnabled, aiIntentModeLabel, aiAssistReviewEnabled, nextStepLabel, insertAfterStepLabel }) => {
+}> = ({ flow, isRecording, aiIntentEnabled, aiIntentModeLabel, aiAssistReviewEnabled, onAiAssistReviewEnabledChange, nextStepLabel, insertAfterStepLabel }) => {
   const flowName = flow.flow.name.trim() || '未命名业务流程';
   const modulePage = [flow.flow.module, flow.flow.page].filter(Boolean).join(' / ');
   const recordingTarget = modulePage || flow.flow.page || flow.flow.module || flowName;
@@ -52,6 +53,10 @@ export const RecordingFlowContextBar: React.FC<{
         <span className={aiIntentEnabled ? 'pill ok' : 'pill warn'}>AI Intent：{aiIntentEnabled ? aiIntentModeLabel : '未启用'}</span>
         <span className={aiAssistReviewEnabled ? 'pill ok' : 'pill'}>{aiAssistReviewEnabled ? '自动优化准备就绪' : '原始规则版'}</span>
       </div>
+      {onAiAssistReviewEnabledChange && <div className='recording-ai-segmented' aria-label='AI 优化开关'>
+        <button type='button' className={aiAssistReviewEnabled ? 'selected' : ''} aria-pressed={!!aiAssistReviewEnabled} onClick={() => onAiAssistReviewEnabledChange(true)}>AI 开启</button>
+        <button type='button' className={!aiAssistReviewEnabled ? 'selected' : ''} aria-pressed={!aiAssistReviewEnabled} onClick={() => onAiAssistReviewEnabledChange(false)}>AI 关闭</button>
+      </div>}
     </section>
 
     {insertAfterStepLabel && <div className='recording-context-insert-note'>当前为插入录制：新操作会优先接在 {insertAfterStepLabel} 后，仍然绑定当前流程。</div>}

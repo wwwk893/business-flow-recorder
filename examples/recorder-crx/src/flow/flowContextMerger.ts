@@ -316,7 +316,7 @@ function locatorHintFromContext(contextTarget: ElementContext, scope?: FlowTarge
     };
   }
   const uiBest = ui?.locatorHints?.slice().sort((a, b) => b.score - a.score)[0];
-  if (uiBest?.kind === 'testid')
+  if (uiBest?.kind === 'testid') {
     return {
       strategy: 'global-testid',
       confidence: uiBest.score,
@@ -325,6 +325,7 @@ function locatorHintFromContext(contextTarget: ElementContext, scope?: FlowTarge
       pageIndex: contextTarget.uniqueness?.pageIndex,
       scopeCount: contextTarget.uniqueness?.scopeCount,
     };
+  }
   if (uiBest?.kind === 'label')
     return { strategy: 'field-scoped', confidence: uiBest.score, reason: uiBest.reason };
   if (uiBest?.kind === 'role')

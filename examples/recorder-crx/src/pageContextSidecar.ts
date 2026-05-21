@@ -714,13 +714,13 @@ function collectForm(target: Element, anchor = actionAnchorForElement(target)) {
 function formItemLabel(item: Element, anchor: Element) {
   const explicit = textFromFirst('.ant-form-item-label label, label', item);
   if (explicit)
-    return explicit;
+    return normalizeFormLabelText(explicit);
   if (item.tagName.toLowerCase() === 'label') {
     const labelText = elementText(item);
     const anchorText = elementText(anchor);
     if (labelText && labelText !== anchorText)
-      return labelText;
-    return labelText || anchorText;
+      return normalizeFormLabelText(labelText);
+    return normalizeFormLabelText(labelText || anchorText);
   }
   return undefined;
 }
@@ -880,6 +880,13 @@ function normalizeText(value?: string) {
   return value?.replace(/\s+/g, ' ').trim();
 }
 
+function normalizeFormLabelText(value?: string) {
+  return value
+      ?.replace(/^\s*[*＊]\s*/, '')
+      .replace(/\s*(?:question|info|exclamation)-circle(?:-[a-z]+)?\b.*$/i, '')
+      .trim() || undefined;
+}
+
 function testIdOf(element: Element) {
   return safeText(element.getAttribute('data-testid') || element.getAttribute('data-test-id') || element.getAttribute('data-e2e') || undefined);
 }
@@ -917,7 +924,7 @@ function labelFromAria(element: Element) {
   const labelledBy = element.getAttribute('aria-labelledby');
   if (!labelledBy)
     return undefined;
-  return labelledBy.split(/\s+/).map(id => element.ownerDocument.getElementById(id)).map(element => elementText(element)).find(Boolean);
+  return normalizeFormLabelText(labelledBy.split(/\s+/).map(id => element.ownerDocument.getElementById(id)).map(element => elementText(element)).find(Boolean));
 }
 
 function labelFromPlaceholder(anchor: Element) {

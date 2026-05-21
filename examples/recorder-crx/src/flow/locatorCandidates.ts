@@ -8,12 +8,12 @@ import type { AdaptiveLocatorCandidate, AdaptiveLocatorCandidateKind } from './a
 import type { FlowStep } from './types';
 
 const priority: Record<AdaptiveLocatorCandidateKind, number> = {
-  testid: 0,
+  'testid': 0,
   'table-row': 1,
-  role: 2,
-  label: 3,
-  text: 4,
-  css: 5,
+  'role': 2,
+  'label': 3,
+  'text': 4,
+  'css': 5,
 };
 
 export function rankAdaptiveLocatorCandidates(step: FlowStep): AdaptiveLocatorCandidate[] {

@@ -44,7 +44,7 @@ function groupPatchOpsByStep(ops: ReplayRepairPatchOperation[]) {
 function insertSteps(steps: FlowStep[], ops: ReplayRepairPatchOperation[]) {
   if (!ops.length)
     return steps;
-  let next = [...steps];
+  const next = [...steps];
   for (const op of ops) {
     if (op.op !== 'insert-step')
       continue;

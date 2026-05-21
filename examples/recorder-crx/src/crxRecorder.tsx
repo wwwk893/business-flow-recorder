@@ -44,7 +44,7 @@ import { createDeepSeekV4FlashProfile, normalizeAiIntentSettings, normalizeProfi
 import { clearAiUsageRecords, loadAiApiKey, loadAiIntentSettings, loadAiProviderProfiles, loadAiUsageRecords, saveAiApiKey, saveAiIntentSettings, saveAiProviderProfiles, withApiKeyPreview } from './aiIntent/storage';
 import { usageRecordsToJsonl } from './aiIntent/usage';
 import type { AiIntentSettings, AiProviderProfile, AiUsageRecord } from './aiIntent/types';
-import { applyRecordingReviewPatch, createAiAssistProvider, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewContext, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairValidationResult } from './aiAssist';
+import { applyRecordingReviewPatch, createAiAssistProvider, repairReplayFailureWithAiAssist, reviewRecordingWithAiAssist, type RecordingReviewContext, type RecordingReviewPatch, type RecordingReviewValidationResult, type ReplayRepairFailure } from './aiAssist';
 import { aiAssistConfigFromSettings } from './aiAssist/providerConfig';
 import { countBusinessFlowPlaybackActions, generateBusinessFlowPlaybackCode, generateBusinessFlowPlaywrightCode } from './flow/codePreview';
 import { appendSyntheticPageContextStepsWithResult, clearFlowRecordingHistory, createAssertion, deleteStepFromFlow, insertEmptyStepAfter, insertWaitStepAfter, mergeActionsIntoFlow, nextAssertionId, normalizeFlowStepIds, type MergeDiagnosticEvent } from './flow/flowBuilder';
@@ -419,6 +419,136 @@ function repairFailureFromDiagnostic(log?: RecorderDiagnosticLog) {
   };
 }
 
+function repairFailureFromCallLogs(callLogs: CallLog[], flow: BusinessFlow): ReplayRepairFailure | undefined {
+  const callLog = [...callLogs].reverse().find(entry => entry.status === 'error' || !!entry.error);
+  if (!callLog)
+    return undefined;
+  const symptomStepId = inferFailureStepIdFromCallLog(callLog, flow);
+  if (!symptomStepId)
+    return undefined;
+  const errorText = [
+    callLog.title,
+    ...callLog.messages,
+    callLog.error,
+  ].filter(Boolean).join('\n');
+  return {
+    symptomStepId,
+    errorType: 'recorder.call-log.error',
+    errorText: errorText || callLog.title || 'Recorder call log failed.',
+    failedCode: callLog.title,
+    failedLocator: callLog.params?.selector,
+  };
+}
+
+function inferFailureStepIdFromCallLog(callLog: CallLog, flow: BusinessFlow) {
+  const evidence = normalizeFailureText([
+    callLog.title,
+    ...callLog.messages,
+    callLog.error,
+    callLog.params?.selector,
+  ].filter(Boolean).join('\n'));
+  const parserSafeCode = generateBusinessFlowPlaybackCode(flow);
+  const fragments = significantFailureFragments(evidence);
+  let best: { stepId: string; score: number } | undefined;
+  for (const step of flow.steps) {
+    const block = normalizeFailureText(parserSafeStepBlock(parserSafeCode, step.id));
+    const terms = stepFailureTerms(step).map(normalizeFailureText).filter(Boolean);
+    let score = 0;
+    if (block && fragments.some(fragment => fragment.length >= 8 && block.includes(fragment)))
+      score += 8;
+    if (evidence.includes(normalizeFailureText(step.action)))
+      score += 1;
+    for (const term of terms) {
+      if (term.length >= 3 && evidence.includes(term))
+        score += term.length >= 6 ? 4 : 2;
+      if (term.length >= 3 && block.includes(term))
+        score += 2;
+    }
+    if (!best || score > best.score)
+      best = { stepId: step.id, score };
+  }
+  return best && best.score >= 4 ? best.stepId : undefined;
+}
+
+function parserSafeStepBlock(code: string, stepId: string) {
+  const marker = `// ${stepId} `;
+  const start = code.indexOf(marker);
+  if (start < 0)
+    return '';
+  const rest = code.slice(start + marker.length);
+  const nextStep = rest.search(/\n\s*\/\/\s*(?:s\d{3,}|step-\d+)\b/);
+  return code.slice(start, nextStep >= 0 ? start + marker.length + nextStep : undefined);
+}
+
+function stepFailureTerms(step: FlowStep) {
+  const target = step.target as any;
+  const before = step.context?.before as any;
+  const after = step.context?.after as any;
+  return [
+    step.id,
+    step.value,
+    step.intent,
+    step.comment,
+    target?.label,
+    target?.name,
+    target?.text,
+    target?.placeholder,
+    target?.testId,
+    target?.role,
+    target?.scope?.dialog?.title,
+    target?.scope?.form?.label,
+    before?.form?.label,
+    after?.form?.label,
+    before?.dialog?.title,
+    after?.dialog?.title,
+  ].filter((term): term is string => typeof term === 'string' && term.trim().length > 0);
+}
+
+function significantFailureFragments(text: string) {
+  return [...new Set(text.split(/[^a-z0-9_\-\u4e00-\u9fa5]+/i).filter(part => part.length >= 4))];
+}
+
+function normalizeFailureText(text?: string) {
+  return (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+type AiAssistAppliedCodeKind = 'review-auto' | 'review-manual' | 'review-confirmed' | 'repair' | 'restore-original' | 'repair-rollback';
+
+type AiAssistAppliedCodeSnapshot = {
+  kind: AiAssistAppliedCodeKind;
+  title: string;
+  code: string;
+  createdAt: string;
+  lineCount: number;
+  fingerprint: string;
+};
+
+function isReviewAppliedCodeSnapshot(snapshot?: AiAssistAppliedCodeSnapshot) {
+  return snapshot?.kind === 'review-auto' || snapshot?.kind === 'review-manual' || snapshot?.kind === 'review-confirmed';
+}
+
+function createAiAssistAppliedCodeSnapshot(kind: AiAssistAppliedCodeKind, title: string, code: string): AiAssistAppliedCodeSnapshot {
+  return {
+    kind,
+    title,
+    code,
+    createdAt: new Date().toISOString(),
+    lineCount: codeLineCount(code),
+    fingerprint: codeFingerprint(code),
+  };
+}
+
+function codeLineCount(code: string) {
+  return code ? code.split(/\r?\n/).length : 0;
+}
+
+function codeFingerprint(code: string) {
+  let hash = 0;
+  for (let i = 0; i < code.length; i++)
+    hash = (Math.imul(31, hash) + code.charCodeAt(i)) | 0;
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 function isRuntimeLogExpanded(entry: RecorderDiagnosticLog, expandedIds: Set<number>) {
   return expandedIds.has(entry.id);
 }
@@ -556,6 +686,10 @@ export const CrxRecorder: React.FC = ({
   const [aiPendingStepIds, setAiPendingStepIds] = React.useState<Set<string>>(() => new Set());
   const [aiAssistReview, setAiAssistReview] = React.useState<AiAssistReviewState>({ status: 'idle' });
   const [aiAssistRepair, setAiAssistRepair] = React.useState<AiAssistRepairState>({ status: 'idle' });
+  const [aiReviewApplyConfirmOpen, setAiReviewApplyConfirmOpen] = React.useState(false);
+  const [aiReviewResultOpen, setAiReviewResultOpen] = React.useState(false);
+  const [aiAssistAppliedCode, setAiAssistAppliedCode] = React.useState<AiAssistAppliedCodeSnapshot>();
+  const [aiAssistAppliedCodeOpen, setAiAssistAppliedCodeOpen] = React.useState(false);
   const [diagnosticLogs, setDiagnosticLogs] = React.useState<RecorderDiagnosticLog[]>(() => loadPersistedDiagnosticLogs());
   const [unsavedFlowPromptOpen, setUnsavedFlowPromptOpen] = React.useState(false);
   const [savingBeforeLeave, setSavingBeforeLeave] = React.useState(false);
@@ -1313,6 +1447,14 @@ export const CrxRecorder: React.FC = ({
     storeSettings(nextSettings).catch(() => {});
   }, []);
 
+  const updateAiAssistReviewOnStop = React.useCallback((enabled: boolean) => {
+    updateCrxSettings({
+      ...settings,
+      aiAssistEnabled: enabled ? true : settings.aiAssistEnabled,
+      aiAssistReviewOnStopRecording: enabled,
+    });
+  }, [settings, updateCrxSettings]);
+
   const saveCode = React.useCallback(() => {
     if (!settings.experimental)
       return;
@@ -1370,6 +1512,7 @@ export const CrxRecorder: React.FC = ({
     const latestFlow = await flushPageContextEventsNow();
     const codeForStorage = settings.businessFlowEnabled === false ? currentCodeText : generateBusinessFlowPlaywrightCode(latestFlow);
     const savedFlow = withPlaywrightCodeForStorage(latestFlow, codeForStorage);
+    flowDraftRef.current = savedFlow;
     setFlowDraft(savedFlow);
     setSelectedRecordId(savedFlow.flow.id);
     setRecordStatus('正在保存流程记录');
@@ -1442,6 +1585,14 @@ export const CrxRecorder: React.FC = ({
     setActiveTab('business');
   }, [finalizeCurrentRecordingSession]);
 
+  const publishAiAssistAppliedCode = React.useCallback((kind: AiAssistAppliedCodeKind, title: string, flow: BusinessFlow) => {
+    const playbackCode = generateBusinessFlowPlaybackCode(flow);
+    const snapshot = createAiAssistAppliedCodeSnapshot(kind, title, playbackCode);
+    setAiAssistAppliedCode(snapshot);
+    window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
+    return playbackCode;
+  }, []);
+
   const runAiAssistReview = React.useCallback(async (reviewMode: 'stop-recording' | 'manual-review' | 'pre-export' = 'manual-review') => {
     setAiAssistReview({ status: 'running', message: '正在保存原始规则版并生成推荐版本...' });
     const flow = flowDraftRef.current;
@@ -1454,21 +1605,23 @@ export const CrxRecorder: React.FC = ({
       contextOptions: { reviewMode },
     });
     aiAssistLastReviewContextRef.current = result.context;
-    if (result.patch)
-      aiAssistLastReviewPatchRef.current = result.patch;
-    if (result.validation)
-      aiAssistLastReviewValidationRef.current = result.validation;
+    aiAssistLastReviewPatchRef.current = result.patch;
+    aiAssistLastReviewValidationRef.current = result.validation;
     if (result.validation?.autoApply && result.validation.appliedFlow) {
       const applied = result.validation.appliedFlow as BusinessFlow;
       flowDraftRef.current = applied;
       setFlowDraft(applied);
+      publishAiAssistAppliedCode('review-auto', 'AI Review 自动应用推荐版本', applied);
     }
     setAiAssistReview({
       status: result.error ? 'error' : 'ready',
-      message: result.error || (result.validation?.autoApply ? '推荐版本已生成并应用，可进入回放验证。' : result.validation?.ok ? '推荐版本已生成，等待确认应用。' : 'AI 优化完成，但没有可应用的推荐版本。'),
+      message: result.error ? 'AI 未应用，继续使用原始规则版。' : (result.validation?.autoApply ? '推荐版本已生成并应用，可进入回放验证。' : result.validation?.ok ? '推荐版本已生成，等待确认应用。' : result.patch ? '推荐版本未通过严格校验，原始规则版已保留，可确认后应用。' : 'AI 优化完成，但没有可应用的推荐版本。'),
+      developerMessage: result.error,
       patch: result.patch,
       validation: result.validation,
       requestId: result.requestId,
+      rawOutput: result.rawOutput,
+      prompt: result.prompt,
     });
     appendDiagnosticLog({
       type: result.error ? 'ai-assist.review.failed' : 'ai-assist.review.completed',
@@ -1482,20 +1635,22 @@ export const CrxRecorder: React.FC = ({
         autoApply: result.validation?.autoApply,
       },
     });
-  }, [aiAssistConfig, appendDiagnosticLog]);
+  }, [aiAssistConfig, appendDiagnosticLog, publishAiAssistAppliedCode]);
 
-  const applyAiAssistReviewPatch = React.useCallback(() => {
+  const applyAiAssistReviewPatch = React.useCallback((options: { force?: boolean } = {}) => {
     const patch = aiAssistLastReviewPatchRef.current;
     const validation = aiAssistLastReviewValidationRef.current;
-    if (!patch || !validation?.ok) {
+    if (!patch || (!validation?.ok && !options.force)) {
       setAiAssistReview(review => ({ ...review, status: 'error', message: '没有可应用且已通过校验的 AI Review patch。' }));
       return;
     }
-    const nextFlow = validation.appliedFlow as BusinessFlow || applyRecordingReviewPatch(flowDraftRef.current, patch);
+    const nextFlow = !options.force && validation?.appliedFlow ? validation.appliedFlow as BusinessFlow : applyRecordingReviewPatch(flowDraftRef.current, patch);
     flowDraftRef.current = nextFlow;
     setFlowDraft(nextFlow);
-    setAiAssistReview(review => ({ ...review, status: 'ready', message: '推荐版本已应用，可进入回放验证。' }));
-  }, []);
+    publishAiAssistAppliedCode(options.force ? 'review-confirmed' : 'review-manual', options.force ? 'AI Review 确认应用推荐版本' : 'AI Review 应用推荐版本', nextFlow);
+    setAiReviewApplyConfirmOpen(false);
+    setAiAssistReview(review => ({ ...review, status: 'ready', message: options.force ? '已按确认应用推荐版本；原始规则版仍可恢复。' : '推荐版本已应用，可进入回放验证。' }));
+  }, [publishAiAssistAppliedCode]);
 
   const restoreAiAssistOriginalFlow = React.useCallback(() => {
     const originalFlow = aiAssistReviewOriginalFlowRef.current;
@@ -1503,17 +1658,56 @@ export const CrxRecorder: React.FC = ({
       return;
     flowDraftRef.current = originalFlow;
     setFlowDraft(originalFlow);
+    publishAiAssistAppliedCode('restore-original', '恢复原始规则版', originalFlow);
     setAiAssistReview(review => ({ ...review, status: 'ready', message: '已恢复原始规则版。' }));
-  }, []);
+  }, [publishAiAssistAppliedCode]);
+
+  const exportAiReviewResult = React.useCallback(() => {
+    const context = aiAssistLastReviewContextRef.current;
+    const reviewAppliedCode = isReviewAppliedCodeSnapshot(aiAssistAppliedCode) ? aiAssistAppliedCode : undefined;
+    const payload = {
+      schema: 'ai-review-result-export/v1',
+      exportedAt: new Date().toISOString(),
+      requestId: aiAssistReview.requestId,
+      status: aiAssistReview.status,
+      applied: !!reviewAppliedCode,
+      message: aiAssistReview.message,
+      developerMessage: aiAssistReview.developerMessage,
+      validation: aiAssistReview.validation,
+      patch: aiAssistReview.patch,
+      rawOutput: aiAssistReview.rawOutput,
+      prompt: aiAssistReview.prompt,
+      reviewContext: context,
+      currentFlow: {
+        id: flowDraft.flow.id,
+        name: flowDraft.flow.name,
+        updatedAt: flowDraft.updatedAt,
+        stepCount: flowDraft.steps.length,
+      },
+      appliedCode: reviewAppliedCode,
+    };
+    const baseName = safeFilename(flowDraft.flow.name || flowDraft.flow.id, 'business-flow');
+    downloadText(`ai-review-result-${baseName}-${generateDatetimeSuffix()}.json`, JSON.stringify(payload, null, 2), 'application/json');
+  }, [aiAssistAppliedCode, aiAssistReview, flowDraft]);
 
   const runAiAssistRepairAndRetry = React.useCallback(async () => {
     const flow = flowDraftRef.current;
     const latestFailure = [...diagnosticLogs].reverse().find(isAiAssistReplayFailureLog);
-    const failure = repairFailureFromDiagnostic(latestFailure);
+    const failure = repairFailureFromDiagnostic(latestFailure) || repairFailureFromCallLogs([...log.values()], flow);
     if (!failure) {
-      setAiAssistRepair({ status: 'error', message: '没有找到带 stepId 的明确回放失败日志。请先运行回放，或导出 runtime failure JSONL 后再修复。' });
+      const hasCallLogError = [...log.values()].some(entry => entry.status === 'error' || !!entry.error);
+      setAiAssistRepair({ status: 'error', message: hasCallLogError ? '已读取当前 Log 错误，但还无法对应到具体业务步骤。请保留错误行后重新运行一次回放，或把失败步骤切到当前代码行。' : '没有找到明确回放失败日志。请先运行回放后再修复。' });
       return;
     }
+    appendDiagnosticLog({
+      type: 'ai-assist.repair.failure-selected',
+      message: 'AI Repair 已选择回放失败上下文',
+      data: {
+        symptomStepId: failure.symptomStepId,
+        errorType: failure.errorType,
+        failedLocator: failure.failedLocator,
+      },
+    });
     setAiAssistRepair({ status: 'running', message: 'AI 正在分析回放失败并生成结构化 patch...' });
     aiAssistRepairRollbackRef.current = flow;
     const provider = createAiAssistProvider(aiAssistConfig);
@@ -1529,8 +1723,7 @@ export const CrxRecorder: React.FC = ({
       const applied = result.validation.appliedFlow;
       flowDraftRef.current = applied;
       setFlowDraft(applied);
-      const playbackCode = generateBusinessFlowPlaybackCode(applied);
-      window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
+      publishAiAssistAppliedCode('repair', 'AI Repair 应用修复尝试版', applied);
       appendDiagnosticLog({
         type: 'ai-assist.repair-retry-requested',
         message: 'AI Repair patch 已应用，触发全量回放重试',
@@ -1567,7 +1760,7 @@ export const CrxRecorder: React.FC = ({
         rootCauseStepId: result.validation?.rootCauseStepId,
       },
     });
-  }, [aiAssistConfig, appendDiagnosticLog, diagnosticLogs]);
+  }, [aiAssistConfig, appendDiagnosticLog, diagnosticLogs, log, publishAiAssistAppliedCode]);
 
   const rollbackAiAssistRepair = React.useCallback(() => {
     const rollbackFlow = aiAssistRepairRollbackRef.current;
@@ -1575,8 +1768,9 @@ export const CrxRecorder: React.FC = ({
       return;
     flowDraftRef.current = rollbackFlow;
     setFlowDraft(rollbackFlow);
+    publishAiAssistAppliedCode('repair-rollback', '回滚到 AI Repair 前版本', rollbackFlow);
     setAiAssistRepair({ status: 'idle', message: '已回滚 AI Repair 临时修改。' });
-  }, []);
+  }, [publishAiAssistAppliedCode]);
 
   React.useEffect(() => {
     if (!hasUnsavedFlowChanges)
@@ -1610,6 +1804,8 @@ export const CrxRecorder: React.FC = ({
     setPickedAssertionTarget(undefined);
     setPickingAssertionStepId(undefined);
     setEditingAssertionStepId(undefined);
+    setAiAssistAppliedCode(undefined);
+    setAiAssistAppliedCodeOpen(false);
     setActiveTab('business');
     window.dispatch({ event: 'clear', params: {} }).catch(() => {});
     window.dispatch({ event: 'businessFlowCodeChanged', params: { code: null } }).catch(() => {});
@@ -1668,6 +1864,8 @@ export const CrxRecorder: React.FC = ({
     setSelectedRecordId(normalized.flow.id);
     setSuppressDefaultMeta(true);
     setActiveTab('business');
+    setAiAssistAppliedCode(undefined);
+    setAiAssistAppliedCodeOpen(false);
     setPanelStage(normalized.steps.length ? 'recording' : 'editRecord');
     setDraftStatus(`已打开记录 ${new Date(normalized.updatedAt).toLocaleTimeString()}`);
     setPageContextCaptureActive(false);
@@ -1699,6 +1897,8 @@ export const CrxRecorder: React.FC = ({
             const emptyDraft = createDraft(settings, false);
             setFlowDraft(emptyDraft);
             setSelectedRecordId(undefined);
+            setAiAssistAppliedCode(undefined);
+            setAiAssistAppliedCodeOpen(false);
             setPanelStage('library');
             setActiveTab('business');
           }
@@ -2173,10 +2373,25 @@ export const CrxRecorder: React.FC = ({
         recordedActionCount,
       },
     });
-    await finalizeCurrentRecordingSession('stop-recording');
+    const finalizedFlow = await finalizeCurrentRecordingSession('stop-recording');
     if (shouldRunAiReview) {
-      setPanelStage('review');
-      setActiveTab('business');
+      const originalSaved = await saveCurrentRecord();
+      if (!originalSaved) {
+        appendDiagnosticLog({
+          type: 'ai-assist.original-save-skipped',
+          level: 'warn',
+          message: '原始规则版未保存到流程库，仍继续本次 AI 优化',
+        });
+      }
+      setPanelStage('replay');
+      setActiveTab('code');
+      setPaused(true);
+      setSelectedFileId('playwright-test');
+      window.dispatch({ event: 'setMode', params: { mode: 'standby' } }).catch(() => {});
+      window.dispatch({ event: 'fileChanged', params: { file: 'playwright-test' } }).catch(() => {});
+      chrome.runtime.sendMessage({ event: 'activeTabAttachRequested' }).catch(() => {});
+      const playbackCode = settings.businessFlowEnabled === false ? currentCodeText : generateBusinessFlowPlaybackCode(finalizedFlow);
+      window.dispatch({ event: 'businessFlowCodeChanged', params: { code: playbackCode } }).catch(() => {});
       runAiAssistReview('stop-recording').catch(() => {});
     } else {
       setPanelStage('recording');
@@ -2186,7 +2401,12 @@ export const CrxRecorder: React.FC = ({
     pendingInsertRecordingRef.current = undefined;
     setInsertRecordingAfterStepId(undefined);
     window.dispatch({ event: 'setMode', params: { mode: 'standby' } }).catch(() => {});
-  }, [aiAssistConfig.enabled, aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, setPageContextCaptureActive]);
+  }, [aiAssistConfig.enabled, aiAssistConfig.reviewOnStopRecording, appendDiagnosticLog, currentCodeText, finalizeCurrentRecordingSession, flowDraft.steps.length, recordedActionCount, runAiAssistReview, saveCurrentRecord, setPageContextCaptureActive, settings.businessFlowEnabled]);
+
+  const stopRecordingAndSaveOriginal = React.useCallback(async () => {
+    await stopRecording({ aiReview: false });
+    await saveCurrentRecord();
+  }, [saveCurrentRecord, stopRecording]);
 
   const continueRecording = React.useCallback(() => {
     if (!hasRecordingFlowContext(flowDraft)) {
@@ -2383,6 +2603,125 @@ export const CrxRecorder: React.FC = ({
       return sameNumberSet(next, ids) ? ids : next;
     });
   }, [runtimeLogIdSet, runtimeLogs]);
+
+  const aiReviewLogBadge = aiAssistReview.status === 'running'
+    ? { className: 'busy' }
+    : aiAssistReview.status === 'error'
+      ? { className: 'warn' }
+      : aiAssistReview.validation && !aiAssistReview.validation.ok
+        ? { className: 'warn' }
+        : aiAssistReview.validation?.autoApply
+          ? { className: 'ok' }
+          : aiAssistReview.status === 'ready'
+            ? { className: 'ok' }
+            : { className: 'idle' };
+  const aiReviewLogTitle = aiAssistReview.status === 'running'
+    ? 'AI 正在生成推荐版本'
+    : aiAssistReview.status === 'error'
+      ? 'AI 未应用，继续使用原始规则版'
+      : aiAssistReview.validation && !aiAssistReview.validation.ok
+        ? '推荐版本需确认'
+        : aiAssistReview.validation?.autoApply
+          ? 'AI 推荐版本已生成'
+          : aiAssistReview.status === 'ready'
+            ? 'AI 优化完成'
+            : aiAssistConfig.reviewOnStopRecording
+              ? '停止录制后自动优化'
+              : 'AI 自动优化未开启';
+  const aiReviewLogDetail = aiAssistReview.status === 'running'
+    ? '保存原始规则版 → AI 审查 → 安全检查'
+    : aiAssistReview.status === 'error'
+      ? '原始规则版已保留，可以继续回放。'
+      : aiAssistReview.validation && !aiAssistReview.validation.ok
+        ? '未通过严格校验，但原始规则版已保留；确认后可应用推荐版本。'
+        : aiAssistReview.validation?.autoApply
+          ? '推荐版本已应用；原始规则版已保留，可恢复 / 可导出。'
+          : aiAssistReview.message || (aiAssistConfig.reviewOnStopRecording ? '停止录制后会自动生成推荐版本。' : '可在录制页开启 AI 后再停止录制。');
+  const aiRepairSucceeded = aiAssistRepair.status === 'ready' && !!aiAssistRepair.validation?.ok;
+  const aiRepairLogBadge = aiAssistRepair.status === 'running'
+    ? { className: 'busy' }
+    : aiRepairSucceeded
+      ? { className: 'ok' }
+      : aiAssistRepair.status === 'ready' || aiAssistRepair.status === 'error'
+        ? { className: 'warn' }
+        : { className: 'idle' };
+  const aiRepairLogTitle = aiAssistRepair.status === 'running'
+    ? 'AI 正在修复并重试'
+    : aiRepairSucceeded
+      ? 'AI 修复并重试已触发'
+      : aiAssistRepair.status === 'error'
+        ? 'AI 修复未应用'
+        : '回放失败后自动修复';
+  const aiRepairLogDetail = aiAssistRepair.message || '失败后收集上下文，生成修复尝试版，保留失败前版本。';
+  const aiDeveloperDetailLines = [
+    aiAssistReview.requestId ? `review requestId: ${aiAssistReview.requestId}` : undefined,
+    aiAssistReview.developerMessage ? `review: ${aiAssistReview.developerMessage}` : undefined,
+    ...(aiAssistReview.validation?.errors ?? []).map(error => `review validation: ${error}`),
+    aiAssistRepair.requestId ? `repair requestId: ${aiAssistRepair.requestId}` : undefined,
+    aiAssistRepair.message && aiAssistRepair.status === 'error' ? `repair: ${aiAssistRepair.message}` : undefined,
+    ...(aiAssistRepair.validation?.errors ?? []).map(error => `repair validation: ${error}`),
+    aiAssistAppliedCode ? `applied code ${aiAssistAppliedCode.fingerprint}: ${aiAssistAppliedCode.lineCount} lines` : undefined,
+  ].filter(Boolean) as string[];
+  const aiAppliedCodeSynced = !!aiAssistAppliedCode && aiAssistAppliedCode.code === businessFlowPlaybackCode;
+  const aiReviewAppliedCode = isReviewAppliedCodeSnapshot(aiAssistAppliedCode) ? aiAssistAppliedCode : undefined;
+  const aiReviewPatchApplied = !!aiReviewAppliedCode;
+  const canApplyValidatedReviewPatch = !aiReviewPatchApplied && !!aiAssistReview.patch && !!aiAssistReview.validation?.ok && !aiAssistReview.validation.autoApply;
+  const canManuallyApplyReviewPatch = !aiReviewPatchApplied && !!aiAssistReview.patch && !!aiAssistReview.validation && !aiAssistReview.validation.ok;
+  const aiReviewContext = aiAssistLastReviewContextRef.current;
+  const hasAiReviewResult = aiAssistReview.status !== 'idle' && (!!aiReviewContext || !!aiAssistReview.patch || !!aiAssistReview.validation || !!aiAssistReview.developerMessage || !!aiAssistReview.rawOutput || !!aiAssistReview.prompt);
+  const showAiReplayLog = panelStage === 'replay' && (aiAssistConfig.enabled || aiAssistReview.status !== 'idle' || aiAssistRepair.status !== 'idle');
+  const aiReplayLoadingBanner = panelStage === 'replay' && aiAssistReview.status === 'running'
+    ? <div className='ai-replay-loading-banner' role='status' aria-live='polite'>
+      <span className='ai-replay-spinner' />
+      <div>
+        <strong>AI 正在优化当前录制</strong>
+        <span>已保留原始规则版，正在请求 Provider 并等待安全检查。</span>
+      </div>
+    </div>
+    : undefined;
+  const aiReplayLogPanel = showAiReplayLog ? <section className='ai-replay-log-panel' aria-label='回放 AI 日志'>
+    <div className='ai-replay-log-body'>
+      <div className={`ai-replay-log-row ${aiReviewLogBadge.className}`}>
+        <span className='ai-log-mark'>{aiAssistReview.status === 'error' ? '›' : aiAssistReview.status === 'running' ? '•' : '✓'}</span>
+        <div>
+          <strong>{aiReviewLogTitle}</strong>
+          <span>{aiReviewLogDetail}</span>
+        </div>
+        {canApplyValidatedReviewPatch && <button type='button' className='mini-button' onClick={() => applyAiAssistReviewPatch()}>应用推荐版</button>}
+        {canManuallyApplyReviewPatch && <button type='button' className='mini-button' onClick={() => setAiReviewApplyConfirmOpen(true)}>查看并应用</button>}
+        {hasAiReviewResult && <button type='button' className='mini-button' onClick={() => setAiReviewResultOpen(true)}>查看 Review 结果</button>}
+      </div>
+      {aiAssistReview.status !== 'idle' && <div className='ai-replay-log-row'>
+        <span className='ai-log-mark'>›</span>
+        <div>
+          <strong>原始规则版已保留</strong>
+          <span>{aiAssistReview.validation?.autoApply ? '可恢复 / 可导出' : '当前继续使用原始规则版'}</span>
+        </div>
+        {aiAssistReview.validation?.autoApply && <button type='button' className='mini-button' onClick={restoreAiAssistOriginalFlow}>恢复原始规则版</button>}
+      </div>}
+      {aiAssistAppliedCode && <div className={`ai-replay-log-row ${aiAppliedCodeSynced ? 'ok' : 'warn'}`}>
+        <span className='ai-log-mark'>{aiAppliedCodeSynced ? '✓' : '›'}</span>
+        <div>
+          <strong>{aiAssistAppliedCode.title}</strong>
+          <span>{aiAssistAppliedCode.lineCount} 行 · #{aiAssistAppliedCode.fingerprint} · {aiAppliedCodeSynced ? '已同步到上方回放代码' : '上方代码和应用快照不一致'}</span>
+        </div>
+        <button type='button' className='mini-button' onClick={() => setAiAssistAppliedCodeOpen(true)}>查看应用代码</button>
+      </div>}
+      {aiAssistConfig.repairOnFailureButton !== false && <div className={`ai-replay-log-row ${aiRepairLogBadge.className}`}>
+        <span className='ai-log-mark'>{aiAssistRepair.status === 'running' ? '•' : aiRepairSucceeded ? '✓' : '›'}</span>
+        <div>
+          <strong>{aiRepairLogTitle}</strong>
+          <span>{aiRepairLogDetail}</span>
+        </div>
+        <button type='button' className='mini-button' disabled={aiAssistRepair.status === 'running'} onClick={runAiAssistRepairAndRetry}>AI 修复并重试</button>
+      </div>}
+      {aiAssistRepair.status !== 'idle' && <button type='button' className='mini-button ai-replay-rollback' disabled={aiAssistRepair.status === 'running'} onClick={rollbackAiAssistRepair}>回滚</button>}
+      <details className='developer-details ai-replay-developer-details'>
+        <summary>开发者详情</summary>
+        <div>{aiDeveloperDetailLines.length ? aiDeveloperDetailLines.map(line => <p key={line}>{line}</p>) : <p>暂无 AI 诊断详情。</p>}</div>
+      </details>
+    </div>
+  </section> : undefined;
 
   const diagnosticLogPanels = <div className='run-log-panel flow-settings-logs'>
     <details className='diagnostic-dev-panel runtime-log-panel' open>
@@ -2690,13 +3029,14 @@ export const CrxRecorder: React.FC = ({
                   aiIntentEnabled={flowAiIntentConfiguredEnabled}
                   aiIntentModeLabel={aiIntentModeLabel(aiSettings.mode)}
                   aiAssistReviewEnabled={aiReviewAutoEnabled}
+                  onAiAssistReviewEnabledChange={updateAiAssistReviewOnStop}
                   nextStepLabel={nextRecordingStepLabel}
                   insertAfterStepLabel={insertAfterStepLabel}
                 />
                 <div className={insertRecordingAfterStepId ? 'recording-toolbar inserting' : 'recording-toolbar'}>
                   <button type='button' onClick={mode === 'recording' ? pauseRecording : continueRecording}>{mode === 'recording' ? '暂停' : '继续'}</button>
                   <button type='button' className='danger' disabled={mode !== 'recording'} onClick={() => stopRecording({ aiReview: aiReviewAutoEnabled })}>{aiReviewAutoEnabled ? '停止录制并优化' : '停止录制'}</button>
-                  <button type='button' onClick={() => aiReviewAutoEnabled && mode === 'recording' ? stopRecording({ aiReview: false }) : saveCurrentRecord()}>{aiReviewAutoEnabled ? '仅保存原始规则版' : '保存记录'}</button>
+                  <button type='button' onClick={() => aiReviewAutoEnabled && mode === 'recording' ? stopRecordingAndSaveOriginal() : saveCurrentRecord()}>{aiReviewAutoEnabled ? '仅保存原始规则版' : '保存记录'}</button>
                   {insertRecordingAfterStepId ? <button type='button' onClick={exitInsertRecording}>退出插入</button> : <button type='button' onClick={() => enterReviewPanel().catch(() => {})}>导出</button>}
                 </div>
                 {aiReviewAutoEnabled && mode === 'recording' && <div className='recording-ai-hint'>停止后会先保留原始规则版，再生成推荐版本；如果 AI 未应用，会继续使用原始规则版。</div>}
@@ -2746,14 +3086,6 @@ export const CrxRecorder: React.FC = ({
                   onOpenSettings={() => setPanelStage('aiSettings')}
                   onSaveRepeatSegment={saveRepeatSegment}
                   onDeleteRepeatSegment={removeRepeatSegment}
-                  aiAssistReview={aiAssistReview}
-                  aiAssistRepair={aiAssistRepair}
-                  onRunAiReview={() => runAiAssistReview('manual-review')}
-                  onApplyAiReviewPatch={applyAiAssistReviewPatch}
-                  onAiRepairAndRetry={runAiAssistRepairAndRetry}
-                  onRollbackAiRepair={rollbackAiAssistRepair}
-                  onRestoreAiOriginal={restoreAiAssistOriginalFlow}
-                  showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
                   showStepToolbar={false}
                 />}
               </> : <FlowSelectionGuard
@@ -2790,21 +3122,15 @@ export const CrxRecorder: React.FC = ({
                 onOpenSettings={() => setPanelStage('aiSettings')}
                 onSaveRepeatSegment={saveRepeatSegment}
                 onDeleteRepeatSegment={removeRepeatSegment}
-                aiAssistReview={aiAssistReview}
-                aiAssistRepair={aiAssistRepair}
-                onRunAiReview={() => runAiAssistReview('manual-review')}
-                onApplyAiReviewPatch={applyAiAssistReviewPatch}
-                onAiRepairAndRetry={runAiAssistRepairAndRetry}
-                onRollbackAiRepair={rollbackAiAssistRepair}
-                onRestoreAiOriginal={restoreAiAssistOriginalFlow}
-                showAiRepairButton={aiAssistConfig.enabled && aiAssistConfig.repairOnFailureButton}
               />}
-              {activeTab === 'code' && <div className='embedded-recorder'>
+              {activeTab === 'code' && <div className={showAiReplayLog ? 'embedded-recorder replay-with-ai-log' : 'embedded-recorder'}>
                 {settings.experimental && <div className='code-actions'>
                   <button type='button' onClick={saveCode}>保存代码</button>
                   <button type='button' onClick={requestStorageState}>下载 storage state</button>
                 </div>}
+                {aiReplayLoadingBanner}
                 <Recorder sources={panelStage === 'replay' ? generatedBusinessPlaybackSources : generatedBusinessSources} paused={panelStage === 'replay' ? true : paused} log={log} mode={mode} onEditedCode={dispatchEditedCode} onCursorActivity={dispatchCursorActivity} />
+                {aiReplayLogPanel}
               </div>}
             </>}
           </div>
@@ -2815,6 +3141,141 @@ export const CrxRecorder: React.FC = ({
             onClose={() => setFlowFormSheet(undefined)}
             onSubmit={saveFlowFromSheet}
           />}
+          {aiReviewApplyConfirmOpen && <div className='sheet-backdrop ai-review-confirm-backdrop' role='presentation' onMouseDown={event => {
+            if (event.target === event.currentTarget)
+              setAiReviewApplyConfirmOpen(false);
+          }}>
+            <section className='ai-review-confirm-sheet sheet-surface' role='dialog' aria-modal='true' aria-label='确认应用 AI 推荐版本'>
+              <header className='sheet-header'>
+                <div>
+                  <h2>确认应用推荐版本</h2>
+                  <p>这版没有通过严格校验，但原始规则版已保留，可以随时恢复。</p>
+                </div>
+                <button type='button' className='sheet-close' aria-label='关闭' onClick={() => setAiReviewApplyConfirmOpen(false)}>×</button>
+              </header>
+              <div className='sheet-body ai-review-confirm-body'>
+                <div className='ai-review-confirm-summary'>
+                  <strong>{aiAssistReview.patch?.diagnosis.summary || 'AI 生成了可尝试的推荐版本'}</strong>
+                  <span>{aiAssistReview.patch?.patches.length || 0} 个修改，{aiAssistReview.validation?.errors.length || 0} 条严格校验提示。</span>
+                </div>
+                <div className='ai-review-confirm-list'>
+                  {(aiAssistReview.validation?.errors.length ? aiAssistReview.validation.errors : ['没有详细校验信息。']).slice(0, 5).map(error => <p key={error}>• {error}</p>)}
+                </div>
+              </div>
+              <footer className='sheet-actions'>
+                <button type='button' onClick={() => setAiReviewApplyConfirmOpen(false)}>继续使用原始版</button>
+                <button type='button' className='primary' onClick={() => applyAiAssistReviewPatch({ force: true })}>仍然应用</button>
+              </footer>
+            </section>
+          </div>}
+          {aiReviewResultOpen && <div className='sheet-backdrop ai-review-result-backdrop' role='presentation' onMouseDown={event => {
+            if (event.target === event.currentTarget)
+              setAiReviewResultOpen(false);
+          }}>
+            <section className='ai-review-result-sheet sheet-surface' role='dialog' aria-modal='true' aria-label='AI Review 结果'>
+              <header className='sheet-header'>
+                <div>
+                  <h2>AI Review 结果</h2>
+                  <p>{aiAssistReview.requestId ? `requestId: ${aiAssistReview.requestId}` : '本次审查结果保存在当前回放会话中'}</p>
+                </div>
+                <button type='button' className='sheet-close' aria-label='关闭' onClick={() => setAiReviewResultOpen(false)}>×</button>
+              </header>
+              <div className='sheet-body ai-review-result-body'>
+                <section className='ai-review-result-card'>
+                  <h3>审查了什么</h3>
+                  <div className='ai-review-result-grid'>
+                    <span>步骤</span><strong>{aiReviewContext?.flowSummary.stepCount ?? flowDraft.steps.length}</strong>
+                    <span>回放动作</span><strong>{aiReviewContext?.generatedArtifacts.playbackActionCount ?? countBusinessFlowPlaybackActions(flowDraft)}</strong>
+                    <span>Review 信号</span><strong>{aiReviewContext?.reviewSignals.length ?? 0}</strong>
+                    <span>状态变化</span><strong>{aiReviewContext?.stateTransitions.length ?? 0}</strong>
+                  </div>
+                  <p>AI 输入包含当前 flow 步骤、生成的回放代码、emittedCodeMap、locator 诊断和状态变化摘要。</p>
+                </section>
+                <section className='ai-review-result-card'>
+                  <h3>应用状态</h3>
+                  <div className='ai-review-result-status'>
+                    <span className={`risk ${aiReviewPatchApplied ? 'ok' : canApplyValidatedReviewPatch || canManuallyApplyReviewPatch ? 'p1' : 'p0'}`}>{aiReviewPatchApplied ? '已应用' : canApplyValidatedReviewPatch || canManuallyApplyReviewPatch ? '待应用' : '未应用'}</span>
+                    <p>{aiReviewPatchApplied ? `推荐版已应用到当前回放代码，快照 ${aiReviewAppliedCode?.lineCount ?? 0} 行，#${aiReviewAppliedCode?.fingerprint ?? 'unknown'}。` : canApplyValidatedReviewPatch ? '严格校验已通过，等待应用推荐版。' : canManuallyApplyReviewPatch ? '未通过严格校验，原始规则版已保留，可确认后应用。' : aiAssistReview.developerMessage || '没有可应用的结构化 patch。'}</p>
+                  </div>
+                </section>
+                {!!(aiAssistReview.validation?.errors.length || aiAssistReview.developerMessage) && <section className='ai-review-result-card'>
+                  <h3>校验信息</h3>
+                  <div className='ai-review-result-list compact'>
+                    {(aiAssistReview.validation?.errors.length ? aiAssistReview.validation.errors : aiAssistReview.developerMessage ? [aiAssistReview.developerMessage] : []).map(item => <div className='ai-review-result-item' key={item}><span>{item}</span></div>)}
+                  </div>
+                </section>}
+                {aiAssistReview.rawOutput && !aiAssistReview.patch && <section className='ai-review-result-card'>
+                  <h3>模型原始输出</h3>
+                  <p>本次返回未能形成可应用 patch，原始输出已保留，可导出后排查 Provider 返回内容。</p>
+                </section>}
+                {aiAssistReview.patch && <section className='ai-review-result-card'>
+                  <h3>模型结论</h3>
+                  <p><strong>{aiAssistReview.patch.diagnosis.summary}</strong></p>
+                  <p>风险：{aiAssistReview.patch.diagnosis.overallRisk}；问题数：{aiAssistReview.patch.diagnosis.issueCount}；自动应用：{aiAssistReview.patch.autoApplyEligibility.eligible ? '允许' : '不允许'}，{aiAssistReview.patch.autoApplyEligibility.reason}</p>
+                </section>}
+                {!!aiAssistReview.patch?.issues.length && <section className='ai-review-result-card'>
+                  <h3>发现的问题</h3>
+                  <div className='ai-review-result-list'>
+                    {aiAssistReview.patch.issues.slice(0, 6).map(issue => <div className='ai-review-result-item' key={issue.issueId}>
+                      <div className='ai-review-result-item-head'>
+                        <strong>{issue.rootCauseStepId} → {issue.affectedStepIds.join(', ') || '当前步骤'}</strong>
+                        <span className='ai-review-result-pill'>{issue.severity}</span>
+                      </div>
+                      <span>{issue.issueKind}</span>
+                      <p>{issue.reason}</p>
+                    </div>)}
+                  </div>
+                </section>}
+                {!!aiAssistReview.patch?.patches.length && <section className='ai-review-result-card'>
+                  <h3>建议修改</h3>
+                  <div className='ai-review-result-list'>
+                    {aiAssistReview.patch.patches.slice(0, 8).map((op, index) => <div className='ai-review-result-item' key={`${op.op}-${op.stepId}-${index}`}>
+                      <div className='ai-review-result-item-head'>
+                        <strong>{op.stepId}</strong>
+                        <span className='ai-review-result-pill'>{op.op}</span>
+                      </div>
+                      <p>{op.reason}</p>
+                    </div>)}
+                  </div>
+                </section>}
+                {!!aiAssistReview.patch?.validationPlan.length && <section className='ai-review-result-card'>
+                  <h3>验证计划</h3>
+                  <div className='ai-review-result-list'>
+                    {aiAssistReview.patch.validationPlan.slice(0, 8).map((item, index) => <div className='ai-review-result-item compact' key={item}>
+                      <strong>{index + 1}</strong>
+                      <span>{item}</span>
+                    </div>)}
+                  </div>
+                </section>}
+              </div>
+              <footer className='sheet-actions ai-review-result-actions'>
+                <button type='button' onClick={() => setAiReviewResultOpen(false)}>关闭</button>
+                <button type='button' onClick={exportAiReviewResult} disabled={!hasAiReviewResult}>导出结果</button>
+                {canManuallyApplyReviewPatch ? <button type='button' className='primary' onClick={() => setAiReviewApplyConfirmOpen(true)}>确认应用</button> : canApplyValidatedReviewPatch ? <button type='button' className='primary' onClick={() => applyAiAssistReviewPatch()}>应用推荐版</button> : <button type='button' className='primary' disabled>{aiReviewPatchApplied ? '已应用' : '无可应用'}</button>}
+              </footer>
+            </section>
+          </div>}
+          {aiAssistAppliedCodeOpen && aiAssistAppliedCode && <div className='sheet-backdrop ai-applied-code-backdrop' role='presentation' onMouseDown={event => {
+            if (event.target === event.currentTarget)
+              setAiAssistAppliedCodeOpen(false);
+          }}>
+            <section className='ai-applied-code-sheet sheet-surface' role='dialog' aria-modal='true' aria-label='AI 应用代码'>
+              <header className='sheet-header'>
+                <div>
+                  <h2>{aiAssistAppliedCode.title}</h2>
+                  <p>{aiAssistAppliedCode.lineCount} 行 · #{aiAssistAppliedCode.fingerprint} · {aiAssistAppliedCode.code === businessFlowPlaybackCode ? '已同步到上方回放代码' : '上方代码和应用快照不一致'}</p>
+                </div>
+                <button type='button' className='sheet-close' aria-label='关闭' onClick={() => setAiAssistAppliedCodeOpen(false)}>×</button>
+              </header>
+              <div className='sheet-body ai-applied-code-body'>
+                <pre className='ai-applied-code-block'>{aiAssistAppliedCode.code}</pre>
+              </div>
+              <footer className='sheet-actions'>
+                <button type='button' onClick={() => setAiAssistAppliedCodeOpen(false)}>关闭</button>
+                <button type='button' className='primary' onClick={() => downloadText(`ai-applied-${aiAssistAppliedCode.kind}-${aiAssistAppliedCode.fingerprint}.spec.ts`, aiAssistAppliedCode.code)}>导出代码</button>
+              </footer>
+            </section>
+          </div>}
           {aiUsageSheetOpen && <div className='sheet-backdrop' role='presentation' onMouseDown={event => {
             if (event.target === event.currentTarget)
               setAiUsageSheetOpen(false);

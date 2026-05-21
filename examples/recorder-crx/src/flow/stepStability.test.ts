@@ -7555,8 +7555,8 @@ test('demo', async ({ page }) => {
       const code = generateBusinessFlowPlaywrightCode(flow);
       const loopBody = code.slice(code.indexOf('for (const row of'), code.indexOf('\n  }', code.indexOf('for (const row of')));
 
-      assert(loopBody.includes("getByRole('row').filter({ hasText: String(row.poolName) }).filter({ hasText: String(row.startIp) })"), 'repeat terminal row locator should chain dynamic row keywords');
-      assert(!loopBody.includes("filter({ hasText: /test1/ })"), 'repeat step row-exists assertions should not emit stale static row keywords inside the loop');
+      assert(loopBody.includes('getByRole(\'row\').filter({ hasText: String(row.poolName) }).filter({ hasText: String(row.startIp) })'), 'repeat terminal row locator should chain dynamic row keywords');
+      assert(!loopBody.includes('filter({ hasText: /test1/ })'), 'repeat step row-exists assertions should not emit stale static row keywords inside the loop');
 
       const playback = generateBusinessFlowPlaybackCode(flow);
       assertEqual(countBusinessFlowPlaybackActions(flow), runnableLineCount(playback));
@@ -13458,7 +13458,7 @@ test('demo', async ({ page }) => {
 
       assert(!types.includes('row-exists'), 'short numeric threshold values should not become row-exists terminal assertions');
       assert(types.includes('modal-closed'), 'modal close terminal assertion should still be inferred for the commit action');
-      assert(!code.includes("filter({ hasText: /3/ })"), 'generated replay should not assert a created row by a short numeric field');
+      assert(!code.includes('filter({ hasText: /3/ })'), 'generated replay should not assert a created row by a short numeric field');
     },
   },
   {
@@ -15175,7 +15175,8 @@ function flowMergeSummary(flow: BusinessFlow) {
 function stableTargetSummary(target: FlowStep['target']) {
   if (!target)
     return undefined;
-  const { raw, ...stableTarget } = target;
+  const stableTarget = { ...target };
+  delete stableTarget.raw;
   return stableTarget;
 }
 

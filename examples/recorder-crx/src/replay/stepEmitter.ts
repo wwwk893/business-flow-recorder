@@ -894,9 +894,10 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
   if (isRedundantSelectedValueDisplayClick(step, options.previousStep))
     return undefined;
   const sourceCode = normalizeActionSource(step.sourceCode);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
+  const shouldRegenerateSource = !!sourceCode && shouldRegenerateDecoratedFieldSource(sourceCode, step);
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedDisambiguatedSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
-  if (sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step) && shouldPreserveRecordedOpenerTestIdSource(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
   const contractSource = contractPrimarySourceForStep(step, options);
   if (contractSource) {
@@ -908,9 +909,17 @@ function sourceCodeForStep(step: FlowStep, options: EmitStepOptions = {}) {
     const fallbackSource = normalizeActionSource(fallback);
     return fallbackSource ? appendSyntheticFollowUpSource(fallbackSource, step, options) : fallbackSource;
   }
-  if (sourceCode && sourceMatchesStep(sourceCode, step))
+  if (!shouldRegenerateSource && sourceCode && sourceMatchesStep(sourceCode, step))
     return appendSyntheticFollowUpSource(sourceCode, step, options);
   return sourceCode;
+}
+
+function shouldRegenerateDecoratedFieldSource(sourceCode: string[], step: FlowStep) {
+  if (!/question-circle|info-circle|exclamation-circle/i.test(sourceCode.join('\n')))
+    return false;
+  if (!/^(click|fill|press)$/.test(step.action))
+    return false;
+  return !!fieldLocator(step) || !!targetNameForLocator(step);
 }
 
 function contractPrimarySourceForStep(step: FlowStep, options: EmitStepOptions = {}) {
@@ -2196,7 +2205,10 @@ function formItemSearchText(label: string) {
 }
 
 function normalizeRequiredLabel(label: string) {
-  return label.replace(/^\s*\*\s*/, '').trim();
+  return label
+      .replace(/^\s*[*＊]\s*/, '')
+      .replace(/\s*(?:question|info|exclamation)-circle(?:-[a-z]+)?\b.*$/i, '')
+      .trim();
 }
 
 function dialogRootLocator(dialog?: FlowDialogScope) {
@@ -2812,7 +2824,11 @@ function fallbackTextLocator(step: FlowStep) {
 }
 
 function targetNameForLocator(step: FlowStep) {
-  return step.target?.name || step.target?.text || step.target?.displayName;
+  return generatedTextCandidate(
+      normalizeRequiredLabel(step.target?.name || ''),
+      normalizeRequiredLabel(step.target?.text || ''),
+      normalizeRequiredLabel(step.target?.displayName || ''),
+  );
 }
 
 function normalizeActionSource(sourceCode?: string) {
