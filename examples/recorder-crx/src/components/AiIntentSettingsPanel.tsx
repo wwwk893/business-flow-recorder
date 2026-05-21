@@ -221,10 +221,6 @@ export const AiIntentSettingsPanel: React.FC<{
           默认打开 Side Panel
         </label>
         <label className='checkbox-row'>
-          <input type='checkbox' checked={!!crxSettings.playInIncognito} onChange={e => updateCrxSettings({ playInIncognito: e.target.checked })} />
-          Replay 使用无痕窗口
-        </label>
-        <label className='checkbox-row'>
           <input type='checkbox' checked={!!crxSettings.experimental} onChange={e => updateCrxSettings({ experimental: e.target.checked })} />
           允许实验功能
         </label>

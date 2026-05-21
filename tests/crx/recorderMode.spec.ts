@@ -18,6 +18,8 @@ import { test, expect } from './crxRecorderTest';
 import { beginNewFlowFromLibraryLikeUser, fillFlowMetaLikeUser, humanClick } from './humanLike';
 import { sourceLines } from './utils';
 
+test.describe.configure({ timeout: 90_000 });
+
 test('explicit legacy recorder mode opens the legacy recorder/player surface', async ({ page, attachRecorder, baseURL }) => {
   await page.goto(`${baseURL}/empty.html`);
   const recorderPage = await attachRecorder(page, { mode: 'legacy' });
@@ -38,38 +40,59 @@ test('explicit business-flow recorder mode opens the business flow surface', asy
   await expect(recorderPage.locator('.side-panel-nav').getByRole('button', { name: /^断言$/ })).toHaveCount(0);
 });
 
-test('opening replay while recording sends standby before waiting for finalization', async ({ page, attachRecorder, baseURL }) => {
+test('business-flow recorder does not expose plugin replay navigation while recording', async ({ page, attachRecorder, baseURL }) => {
   await page.goto(`${baseURL}/empty.html`);
   const recorderPage = await attachRecorder(page, { mode: 'business-flow' });
 
   await beginNewFlowFromLibraryLikeUser(recorderPage);
-  await fillFlowMetaLikeUser(recorderPage, '流程名称', '回放前停止录制时序');
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', '导出交接录制流程');
+  await humanClick(recorderPage.getByRole('button', { name: '保存并开始录制' }));
+  await expect(recorderPage.locator('.recording-status')).toContainText('录制中');
+  await expect(recorderPage.locator('.side-panel-nav')).not.toContainText('回放');
+  await expect(recorderPage.getByRole('button', { name: '停止录制' })).toBeVisible();
+});
+
+test('opening code preview switches recorder to standby before finalization', async ({ page, attachRecorder, baseURL }) => {
+  await page.goto(`${baseURL}/empty.html`);
+  const recorderPage = await attachRecorder(page, { mode: 'business-flow' });
+
+  await beginNewFlowFromLibraryLikeUser(recorderPage);
+  await fillFlowMetaLikeUser(recorderPage, '流程名称', '代码预览停止采集');
   await humanClick(recorderPage.getByRole('button', { name: '保存并开始录制' }));
   await expect(recorderPage.locator('.recording-status')).toContainText('录制中');
 
+  await page.goto(`${baseURL}/antd-users-real.html`);
+  await expect(page.getByTestId('create-user-btn')).toBeVisible();
+  await page.getByTestId('create-user-btn').click();
+  await expect.poll(() => recorderPage.locator('.flow-step').count(), { timeout: 20_000 }).toBeGreaterThanOrEqual(1);
+
+  await humanClick(recorderPage.getByRole('button', { name: '停止录制' }));
+  await recorderPage.locator('.side-panel-nav').getByRole('button', { name: '导出', exact: true }).click();
+  await expect(recorderPage.locator('.export-review-panel')).toBeVisible();
+
   await recorderPage.evaluate(() => {
     const targetWindow = window as typeof window & {
-      __openReplayDispatches?: string[];
-      __replayDrainReleased?: boolean;
-      __releaseReplayDrain?: () => void;
+      __codePreviewDispatches?: string[];
+      __codePreviewDrainReleased?: boolean;
+      __releaseCodePreviewDrain?: () => void;
     };
-    targetWindow.__openReplayDispatches = [];
-    targetWindow.__replayDrainReleased = false;
+    targetWindow.__codePreviewDispatches = [];
+    targetWindow.__codePreviewDrainReleased = false;
     const dispatchWindow = window as typeof window & { dispatch: (data: any) => Promise<void> };
     const originalDispatch = dispatchWindow.dispatch;
     dispatchWindow.dispatch = async data => {
-      targetWindow.__openReplayDispatches?.push(data?.event);
+      targetWindow.__codePreviewDispatches?.push(data?.event);
       return originalDispatch(data);
     };
 
     const originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
     chrome.runtime.sendMessage = ((message: any, ...args: any[]) => {
       if (message?.event === 'pageContextEventsRequested') {
-        if (targetWindow.__replayDrainReleased)
+        if (targetWindow.__codePreviewDrainReleased)
           return Promise.resolve([]);
         return new Promise(resolve => {
-          targetWindow.__releaseReplayDrain = () => {
-            targetWindow.__replayDrainReleased = true;
+          targetWindow.__releaseCodePreviewDrain = () => {
+            targetWindow.__codePreviewDrainReleased = true;
             resolve([]);
           };
         });
@@ -78,24 +101,23 @@ test('opening replay while recording sends standby before waiting for finalizati
     }) as typeof chrome.runtime.sendMessage;
   });
 
-  const replayNavButton = recorderPage.locator('.side-panel-nav.segmented button').nth(3);
-  const openReplay = replayNavButton.click({ timeout: 10_000 });
+  const openCodePreview = recorderPage.getByRole('button', { name: '查看代码预览' }).click({ timeout: 10_000 });
   let assertionError: unknown;
   try {
     await expect.poll(async () => {
-      return await recorderPage.evaluate(() => (window as typeof window & { __openReplayDispatches?: string[] }).__openReplayDispatches ?? []);
+      return await recorderPage.evaluate(() => (window as typeof window & { __codePreviewDispatches?: string[] }).__codePreviewDispatches ?? []);
     }, { timeout: 1_000 }).toContain('setMode');
-    const blockedDispatches = await recorderPage.evaluate(() => (window as typeof window & { __openReplayDispatches?: string[] }).__openReplayDispatches ?? []);
+    const blockedDispatches = await recorderPage.evaluate(() => (window as typeof window & { __codePreviewDispatches?: string[] }).__codePreviewDispatches ?? []);
     expect(blockedDispatches).not.toContain('businessFlowCodeChanged');
   } catch (error) {
     assertionError = error;
   } finally {
-    await recorderPage.evaluate(() => (window as typeof window & { __releaseReplayDrain?: () => void }).__releaseReplayDrain?.());
-    await openReplay.catch(() => {});
+    await recorderPage.evaluate(() => (window as typeof window & { __releaseCodePreviewDrain?: () => void }).__releaseCodePreviewDrain?.());
+    await openCodePreview.catch(() => {});
   }
   if (assertionError)
     throw assertionError;
 
-  const dispatches = await recorderPage.evaluate(() => (window as typeof window & { __openReplayDispatches?: string[] }).__openReplayDispatches ?? []);
+  const dispatches = await recorderPage.evaluate(() => (window as typeof window & { __codePreviewDispatches?: string[] }).__codePreviewDispatches ?? []);
   expect(dispatches[0]).toBe('setMode');
 });

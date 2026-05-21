@@ -41,9 +41,7 @@
     "test:crx:legacy-core": "xvfb-run -a npx playwright test -c tests/playwright.config.ts tests/crx/recorder.spec.ts tests/crx/player.spec.ts tests/crx/player-actions.spec.ts tests/crx/player-asserts.spec.ts --project=Chrome --workers=1",
     "test:crx:all": "xvfb-run -a npx playwright test -c tests/playwright.config.ts --project=Chrome --workers=1",
     "benchmark:agents": "python3 ./benchmarks/agent_models/agent_model_benchmark.py",
-    "benchmark:repair-agents": "python3 ./benchmarks/repair_models/repair_model_benchmark.py",
-    "test:agent-benchmark": "python3 -m unittest benchmarks.agent_models.test_agent_model_benchmark -v",
-    "test:repair-benchmark": "python3 -m unittest benchmarks.repair_models.test_repair_model_benchmark -v"
+    "test:agent-benchmark": "python3 -m unittest benchmarks.agent_models.test_agent_model_benchmark -v"
   },
   "workspaces": [
     "examples/recorder-crx",
